@@ -1,5 +1,5 @@
 # NERSIE: Nightreign-EldenRing-Sekiro Icon Extractor
-A simple GUI application for previewing and exporting FromSoftware icons.
+A simple GUI application for previewing and exporting icons from modern FromSoftware games.  
 
 This project includes code from the [SoulStruct](https://github.com/Grimrukh/soulstruct) library:  
 SoulStruct: https://github.com/Grimrukh/soulstruct  
