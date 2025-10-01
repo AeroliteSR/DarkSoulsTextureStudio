@@ -1,3 +1,9 @@
+# Additional
+00_solo_h.py
+CMDL.py
+FS-Icon-Extractor.exe
+.gitignore
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
