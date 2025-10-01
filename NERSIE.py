@@ -118,7 +118,7 @@ class ExtractWorker(QObject):
     progress = pyqtSignal(int, str) # percent, message
     finished = pyqtSignal()
 
-    def __init__(self, atlases, subtextures, output_dir, loader, tasks=None,):
+    def __init__(self, atlases, subtextures, output_dir, loader, tasks=None):
         super().__init__()
         self.atlases = atlases
         self.subtextures = subtextures
@@ -141,7 +141,6 @@ class ExtractWorker(QObject):
 
         total = len(self.tasks)
         for i, (atlas_name, st) in enumerate(self.tasks, 1):
-
             if self._interrupted:
                 break
 
@@ -264,7 +263,7 @@ class MainWindow(QMainWindow):
 
         # --- Signals ---
         self.worker.progress.connect(self.updateProgress)
-        self.worker.finished.connect(self.load_done)
+        self.worker.finished.connect(self.loadDone)
         self.worker.finished.connect(self.thread.quit)
         self.worker.finished.connect(self.worker.deleteLater)
         self.thread.finished.connect(self.thread.deleteLater)
@@ -293,23 +292,24 @@ class MainWindow(QMainWindow):
         self.progress_dialog = QProgressDialog("Exporting...", "Cancel", 0, 100, self)
         self.progress_dialog.setWindowTitle("Exporting")
         self.progress_dialog.setWindowModality(Qt.ApplicationModal)
-        self.progress_dialog.canceled.connect(self.worker.interrupt)
+        self.progress_dialog.canceled.connect(lambda: ExtractWorker.interrupt)
         self.progress_dialog.show()
 
-        # Worker + thread
-        self.thread = QThread()
-        self.worker = ExtractWorker(self.atlases, self.subtextures, output_dir, loader=self.getPilImage, tasks=tasks)
-        self.worker.moveToThread(self.thread)
+        thread = QThread(self)
+        worker = ExtractWorker(self.atlases, self.subtextures, output_dir, loader=self.getPilImage, tasks=tasks)
+        worker.moveToThread(thread)
 
-        # Signals
-        self.worker.progress.connect(self.updateProgress)
-        self.worker.finished.connect(self.extraction_done)
-        self.worker.finished.connect(self.thread.quit)
-        self.worker.finished.connect(self.worker.deleteLater)
-        self.thread.started.connect(self.worker.run)
-        self.thread.finished.connect(self.thread.deleteLater)
+        self.Ethread = thread
+        self.Eworker = worker
 
-        self.thread.start()
+        worker.progress.connect(self.updateProgress)
+        worker.finished.connect(self.extractionDone)
+        worker.finished.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+
+        thread.started.connect(worker.run)
+        thread.start()
 
     def updateProgress(self, percent, message):
         self.progress_dialog.setValue(percent)
