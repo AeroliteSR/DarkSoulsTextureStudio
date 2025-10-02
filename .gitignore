@@ -11,6 +11,7 @@ NERSIE.onefile-build/
 NERSIE.exe
 nuitka-crash-report.xml
 Stuff/
+oo2core_6_win64.dll
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

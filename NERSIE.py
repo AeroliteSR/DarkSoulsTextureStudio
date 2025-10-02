@@ -7,8 +7,8 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout,
     QListWidget, QLabel, QHBoxLayout, QFileDialog,
     QPushButton, QMessageBox, QSplitter, QAction, QProgressDialog)
-from PyQt5.QtGui import QPixmap, QImage, QIcon
-from PyQt5.QtCore import Qt, QObject, pyqtSignal, QThread
+from PyQt5.QtGui import QPixmap, QImage, QIcon, QDesktopServices
+from PyQt5.QtCore import Qt, QObject, pyqtSignal, QThread, QUrl
 from PIL import Image
 from soulstruct.containers import tpf
 from soulstruct.dcx import core, oodle
@@ -365,7 +365,15 @@ class MainWindow(QMainWindow):
 
     def extractionDone(self):
         self.progress_dialog.close()
-        QMessageBox.information(self, "Saved", f"Export saved to {self.project_dir / "Output"}")
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Information)
+        msg.setWindowTitle("Saved")
+        msg.setText(f"Export saved to {self.project_dir / "Output"}")
+        _open = QPushButton("Open Folder")
+        msg.addButton(_open, QMessageBox.ActionRole)
+        msg.addButton(QMessageBox.Ok)
+        _open.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.project_dir / "Output"))))
+        msg.exec_()
 
     def showAbout(self):
         QMessageBox.information(
@@ -460,7 +468,7 @@ class MainWindow(QMainWindow):
             out_path.mkdir(parents=True, exist_ok=True)
             atlas_img = self.getPilImage(self.current_atlas)
             atlas_img.save(out_path / f"{self.current_atlas}.png")
-            QMessageBox.information(self, "Saved", f"{self.current_atlas} saved to:\n {out_path}")
+            self.extractionDone()
 
     def saveAll(self):
         """Export all subtextures from the currently selected atlas"""
@@ -481,14 +489,7 @@ class MainWindow(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
-
-    if getattr(sys, 'frozen', False) and hasattr(sys, "_MEIPASS"):
-        base_path = Path(sys.executable).parent # pyinstaller
-    elif getattr(sys, "frozen", False) and hasattr(sys, "__nuitka_binary_dir__"):
-        base_path = Path(sys.__nuitka_binary_dir__) # nuitka
-    else:
-        base_path = Path(__file__).parent # python file
-
+    base_path = Path(sys.argv[0]).parent
     app.setWindowIcon(QIcon(str(base_path / "icon.ico")))
     window = MainWindow(project_dir=base_path)
     window.show()
@@ -497,5 +498,5 @@ def main():
 if __name__ == "__main__":
     main()
 
-# nuitka --standalone --onefile --windows-console-mode=disable --enable-plugin=pyqt5 --windows-icon-from-ico=icon.ico --msvc=latest --lto=yes NERSIE.py
+# nuitka --standalone --onefile --windows-console-mode=disable --enable-plugin=pyqt5 --windows-icon-from-ico=icon.ico --include-data-file=icon.ico=icon.ico --msvc=latest --lto=yes NERSIE.py
 # pyinstaller NERSIE.py --noconsole --icon=icon.ico --add-data "icon.ico;." --collect-data soulstruct
