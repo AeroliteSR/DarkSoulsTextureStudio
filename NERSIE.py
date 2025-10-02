@@ -162,6 +162,12 @@ class ExtractWorker(QObject):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        # Create project directory path
+        if getattr(sys, "frozen", False):
+            self.project_dir = Path(sys.executable).parent
+        else:
+            self.project_dir = Path(__file__).parent
+
         self.setWindowTitle("NERSIE")
         self.setGeometry(100, 100, 1100, 700)
         self.createMenu()
@@ -245,11 +251,7 @@ class MainWindow(QMainWindow):
         self.info_label.setText("Image info will appear here")
 
     def checkOodleDLL(self):
-        if getattr(sys, "frozen", False):
-            proj_dir = Path(sys.executable).parent
-        else:
-            proj_dir = Path(__file__).parent
-        target = proj_dir / "oo2core_6_win64.dll"
+        target = self.project_dir / "oo2core_6_win64.dll"
 
         try:
             oodle.LOAD_DLL(target)
@@ -330,7 +332,7 @@ class MainWindow(QMainWindow):
         self.info_label.setText("Image info will appear here")
 
     def runExtraction(self, tasks=None):
-        output_dir = Path.cwd() / "Output"
+        output_dir = self.project_dir / "Output"
 
         self.progress_dialog = QProgressDialog("Exporting...", "Cancel", 0, 100, self)
         self.progress_dialog.setWindowTitle("Exporting")
