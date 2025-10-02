@@ -482,10 +482,12 @@ class MainWindow(QMainWindow):
 def main():
     app = QApplication(sys.argv)
 
-    if getattr(sys, 'frozen', False):
-        base_path = Path(sys.executable).parent
+    if getattr(sys, 'frozen', False) and hasattr(sys, "_MEIPASS"):
+        base_path = Path(sys.executable).parent # pyinstaller
+    elif getattr(sys, "frozen", False) and hasattr(sys, "__nuitka_binary_dir__"):
+        base_path = Path(sys.__nuitka_binary_dir__) # nuitka
     else:
-        base_path = Path(__file__).parent
+        base_path = Path(__file__).parent # python file
 
     app.setWindowIcon(QIcon(str(base_path / "icon.ico")))
     window = MainWindow(project_dir=base_path)
