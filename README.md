@@ -9,5 +9,5 @@ Reference: [SoulStruct Licensing Statement](https://github.com/Grimrukh/soulstru
 Only a small subset of SoulStruct's source code is included in this project.   
 These files remain under the original GPL-3 license.
 
-This project is also distributed under [GPL-3.0](https://www.gnu.org/licenses/gpl-3.0.en.html), 
-and any portions that derive from SoulStruct must comply with GPL-3 when distributed.
+This project is also licensed under [GPL-3.0](https://www.gnu.org/licenses/gpl-3.0.en.html), 
+and any portions that derive from SoulStruct must comply with GPL-3 when redistributed.
