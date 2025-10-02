@@ -14,6 +14,7 @@ from soulstruct.containers import tpf
 from soulstruct.dcx import core, oodle
 
 class Functions():
+    @staticmethod
     def getLayoutData(dcx_path):
         with open(dcx_path, "rb") as f:
             decompressed_bytes, _ = core.decompress(f)
@@ -22,6 +23,7 @@ class Functions():
             xml_text = xml_bytes.decode("utf-8", errors="ignore").replace("\x00", "")
             return f"<Root>{xml_text}</Root>"
 
+    @staticmethod
     def loadTextures(dcx_path, layout_path):
         """Load textures from the TPF.DCX and parse layout XML"""
         layout_xml = Functions.getLayoutData(layout_path)
@@ -86,6 +88,10 @@ class LoadWorker(QObject):
 
             atlas_nodes = root.findall("TextureAtlas")
             total = len(atlas_nodes)
+
+            if total == 0:
+                self.progress.emit(100, "No atlases found")
+                return
 
             for i, texture_atlas in enumerate(atlas_nodes, 1):
                 filepath = texture_atlas.get("imagePath")
@@ -160,13 +166,10 @@ class ExtractWorker(QObject):
         self.finished.emit()
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, project_dir):
         super().__init__()
         # Create project directory path
-        if getattr(sys, "frozen", False):
-            self.project_dir = Path(sys.executable).parent
-        else:
-            self.project_dir = Path(__file__).parent
+        self.project_dir = project_dir
 
         self.setWindowTitle("NERSIE")
         self.setGeometry(100, 100, 1100, 700)
@@ -337,7 +340,6 @@ class MainWindow(QMainWindow):
         self.progress_dialog = QProgressDialog("Exporting...", "Cancel", 0, 100, self)
         self.progress_dialog.setWindowTitle("Exporting")
         self.progress_dialog.setWindowModality(Qt.ApplicationModal)
-        self.progress_dialog.canceled.connect(self.Eworker.interrupt)
         self.progress_dialog.show()
 
         thread = QThread(self)
@@ -346,6 +348,7 @@ class MainWindow(QMainWindow):
 
         self.Ethread = thread
         self.Eworker = worker
+        self.progress_dialog.canceled.connect(self.Eworker.interrupt)
 
         worker.progress.connect(self.updateProgress)
         worker.finished.connect(self.extractionDone)
@@ -362,7 +365,7 @@ class MainWindow(QMainWindow):
 
     def extractionDone(self):
         self.progress_dialog.close()
-        QMessageBox.information(self, "Done", "Export finished successfully.")
+        QMessageBox.information(self, "Saved", f"Export saved to {self.project_dir / "Output"}")
 
     def showAbout(self):
         QMessageBox.information(
@@ -453,11 +456,11 @@ class MainWindow(QMainWindow):
             self.runExtraction(tasks=[(self.current_atlas, st)])
 
         else: # No subtexture selected, export the full atlas
-            out_path = Path.cwd() / "Output" /"_Atlases"
+            out_path = self.project_dir / "Output" /"_Atlases"
             out_path.mkdir(parents=True, exist_ok=True)
             atlas_img = self.getPilImage(self.current_atlas)
             atlas_img.save(out_path / f"{self.current_atlas}.png")
-            QMessageBox.information(self, "Saved", f"Atlas {self.current_atlas} saved to {out_path}")
+            QMessageBox.information(self, "Saved", f"{self.current_atlas} saved to:\n {out_path}")
 
     def saveAll(self):
         """Export all subtextures from the currently selected atlas"""
@@ -480,12 +483,12 @@ def main():
     app = QApplication(sys.argv)
 
     if getattr(sys, 'frozen', False):
-        base_path = Path(sys._MEIPASS)
+        base_path = Path(sys.executable).parent
     else:
         base_path = Path(__file__).parent
 
     app.setWindowIcon(QIcon(str(base_path / "icon.ico")))
-    window = MainWindow()
+    window = MainWindow(project_dir=base_path)
     window.show()
     sys.exit(app.exec_())
 

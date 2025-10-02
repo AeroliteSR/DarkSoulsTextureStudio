@@ -13,7 +13,7 @@ SoulStruct: https://github.com/Grimrukh/soulstruct
 License: [GPL-3.0](https://www.gnu.org/licenses/gpl-3.0.en.html)  
 Reference: [SoulStruct Licensing Statement](https://github.com/Grimrukh/soulstruct/blob/main/pyproject.toml#L6)  
 
-Only a small subset of SoulStruct's source code is included in this project. This source files are heavily modified. Please refer to the original source.     
+Only a small subset of SoulStruct's source code is included in this project. These source files are heavily modified. Please refer to the original source.     
 These files remain under the original GPL-3 license.  
 
 This project is also licensed under [GPL-3.0](https://www.gnu.org/licenses/gpl-3.0.en.html),
