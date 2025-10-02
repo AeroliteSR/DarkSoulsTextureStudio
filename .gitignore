@@ -3,6 +3,14 @@
 CMDL.py
 FS-Icon-Extractor.exe
 .gitignore
+icon.ico
+App/
+NERSIE.build/
+NERSIE.dist/
+NERSIE.onefile-build/
+NERSIE.exe
+nuitka-crash-report.xml
+Stuff/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

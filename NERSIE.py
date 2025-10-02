@@ -1,16 +1,17 @@
 import sys
 import io
+import shutil
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout,
     QListWidget, QLabel, QHBoxLayout, QFileDialog,
     QPushButton, QMessageBox, QSplitter, QAction, QProgressDialog)
-from PyQt5.QtGui import QPixmap, QImage
+from PyQt5.QtGui import QPixmap, QImage, QIcon
 from PyQt5.QtCore import Qt, QObject, pyqtSignal, QThread
 from PIL import Image
 from soulstruct.containers import tpf
-from soulstruct.dcx import core
+from soulstruct.dcx import core, oodle
 
 class Functions():
     def getLayoutData(dcx_path):
@@ -22,7 +23,7 @@ class Functions():
             return f"<Root>{xml_text}</Root>"
 
     def loadTextures(dcx_path, layout_path):
-        """Load textures from the TPF.DCX and parse layout XML."""
+        """Load textures from the TPF.DCX and parse layout XML"""
         layout_xml = Functions.getLayoutData(layout_path)
         root = ET.fromstring(layout_xml)
 
@@ -91,7 +92,7 @@ class LoadWorker(QObject):
                 filename = Path(filepath).stem
 
                 if filename not in textures_dict:
-                    self.progress.emit(int(i/total*100), f"{filename} not found, skipping.")
+                    self.progress.emit(20 + int(i / total * 80), f"{filename} not found, skipping.")
                     continue
 
                 atlases[filename] = textures_dict[filename]  # store raw texture
@@ -243,9 +244,54 @@ class MainWindow(QMainWindow):
         self.preview_label.setText("Select an atlas or subtexture")
         self.info_label.setText("Image info will appear here")
 
-    def openDcxDialog(self):        
-        file_path, _ = QFileDialog.getOpenFileName(self, "Navigate to 01_common(_h).tpf.dcx", "", "DCX Files (*.dcx)")
-        layout_path, _ = QFileDialog.getOpenFileName(None, "Navigate to 01_common(_h).sblytbnd.dcx", "", "DCX Files (*.dcx)")
+    def checkOodleDLL(self):
+        if getattr(sys, "frozen", False):
+            proj_dir = Path(sys.executable).parent
+        else:
+            proj_dir = Path(__file__).parent
+        target = proj_dir / "oo2core_6_win64.dll"
+
+        try:
+            oodle.LOAD_DLL(target)
+        except oodle.MissingOodleDLLError:
+            result = QMessageBox.question(
+                    self,
+                    "DLL Missing",
+                    "Could not find oo2core_6_win64.dll within default game paths.\n"
+                    "Textures will not be loaded without it.\n\n"
+                    "Would you like to manually locate it?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No)
+            
+            if result == QMessageBox.Yes:
+                dll = Path(QFileDialog.getOpenFileName(self, "Navigate to oo2core_6_win64.dll", "", "DLL Files (*.dll)")[0])
+                if dll and Path(dll).exists():
+                    try:                                            
+                        oodle.LOAD_DLL(dll)
+                        # Copy DLL next to the exe for future runs
+                        shutil.copy(dll, target)
+                        QMessageBox.information(self, "DLL Copied", f"{dll.name} has been copied to NERSIE\n"
+                                                                    "Future runs will automatically use this DLL.")
+                        
+                    except Exception as e:
+                        QMessageBox.critical(self, "Error", f"Failed to load DLL:\n{e}")
+            
+    def openDcxDialog(self):       
+        self.clear() 
+        self.checkOodleDLL()
+        file_path = Path(QFileDialog.getOpenFileName(self, "Navigate to 01_common.tpf.dcx", "", "DCX Files (*.dcx)")[0])
+
+        if file_path.parent.stem in ['hi', 'low']: # sekiro/ER file system
+            try_layout = file_path.parent / "01_common.sblytbnd.dcx"
+        else: # NR file system
+            filetext = "01_common_h.sblytbnd.dcx" if file_path.name == "01_common_h.tpf.dcx" else "01_common_l.sblytbnd.dcx" # high or low res versions
+            try_layout = file_path.parent / filetext
+
+        if try_layout.exists():
+            layout_path = try_layout
+        else:
+            layout_path = Path(QFileDialog.getOpenFileName(None, "Navigate to 01_common(_h).sblytbnd.dcx", "", "DCX Files (*.dcx)")[0])
+
         if not file_path or not layout_path:
             return
 
@@ -253,15 +299,12 @@ class MainWindow(QMainWindow):
         self.progress_dialog.setWindowTitle("Loading")
         self.progress_dialog.setWindowModality(Qt.ApplicationModal)
         self.progress_dialog.setStyleSheet("""QProgressDialog {padding: 0px;margin: 0px;}""")
-
         self.progress_dialog.show()
 
-        # --- Keep references in self ---
         self.thread = QThread()
         self.worker = LoadWorker(file_path, layout_path)
         self.worker.moveToThread(self.thread)
 
-        # --- Signals ---
         self.worker.progress.connect(self.updateProgress)
         self.worker.finished.connect(self.loadDone)
         self.worker.finished.connect(self.thread.quit)
@@ -292,7 +335,7 @@ class MainWindow(QMainWindow):
         self.progress_dialog = QProgressDialog("Exporting...", "Cancel", 0, 100, self)
         self.progress_dialog.setWindowTitle("Exporting")
         self.progress_dialog.setWindowModality(Qt.ApplicationModal)
-        self.progress_dialog.canceled.connect(lambda: ExtractWorker.interrupt)
+        self.progress_dialog.canceled.connect(self.Eworker.interrupt)
         self.progress_dialog.show()
 
         thread = QThread(self)
@@ -328,18 +371,12 @@ class MainWindow(QMainWindow):
         )
 
     def pil2Qpixmap(self, pil_img, max_size=(600, 400)):
-        """Convert PIL image → QPixmap with aspect ratio preserved."""
+        """Convert PIL Image to QPixmap without destroying the aspect ratio lol"""
         data = pil_img.tobytes("raw", "RGBA")
         qimg = QImage(data, pil_img.width, pil_img.height, QImage.Format_RGBA8888)
         pixmap = QPixmap.fromImage(qimg)
 
-        # Scale to fit preview area, keeping aspect ratio
-        return pixmap.scaled(
-            max_size[0],
-            max_size[1],
-            Qt.KeepAspectRatio,
-            Qt.SmoothTransformation
-        )
+        return pixmap.scaled(max_size[0], max_size[1], Qt.KeepAspectRatio, Qt.SmoothTransformation)
     
     def getPngSize(self, pil_img):
         buf = io.BytesIO()
@@ -366,10 +403,10 @@ class MainWindow(QMainWindow):
         texture = self.atlases[atlas_name]
         with io.BytesIO(texture.data) as dds_buffer:
             img = Image.open(dds_buffer).convert("RGBA")
-        self.thumbnail_cache[atlas_name] = img  # optional: cache full image or thumbnail
+        self.thumbnail_cache[atlas_name] = img
         return img
 
-    def showAtlas(self, current, _previous):
+    def showAtlas(self, current):
         if not current:
             return
         atlas_name = current.text()
@@ -377,22 +414,18 @@ class MainWindow(QMainWindow):
         self.current_crop = None
 
         atlas_img = self.getPilImage(atlas_name)
-
-        # Create a thumbnail for preview
         preview_img = atlas_img.copy()
         preview_img.thumbnail((600, 400), Image.Resampling.LANCZOS)
         pixmap = self.pil2Qpixmap(preview_img)
         self.preview_label.setPixmap(pixmap)
 
-        # Info Box
         self.info_label.setText(self.formatImageInfo(atlas_name, atlas_img, "Atlas"))
 
-        # Populate subtexture list
         self.subtexture_list.clear()
         for st in self.subtextures.get(atlas_name, []):
             self.subtexture_list.addItem(st["name"])
 
-    def showSubtexture(self, current, _previous):
+    def showSubtexture(self, current):
         if not current or not self.current_atlas:
             return
         name = current.text()
@@ -408,20 +441,16 @@ class MainWindow(QMainWindow):
         self.info_label.setText(self.formatImageInfo(name, cropped, "Subtexture"))
 
     def saveSelection(self):
-        """Save current subtexture (if selected) or whole atlas (if only atlas selected)."""
+        """Save current subtexture or whole atlas"""
         if not self.current_atlas:
             QMessageBox.warning(self, "Warning", "No atlas selected.")
             return
 
-        if self.current_crop is not None and self.subtexture_list.currentItem():
-            # Subtexture selected
-            st = next(
-                s for s in self.subtextures[self.current_atlas]
-                if s["name"] == self.subtexture_list.currentItem().text()
-            )
+        if self.current_crop is not None and self.subtexture_list.currentItem(): # Subtexture selected
+            st = next(s for s in self.subtextures[self.current_atlas] if s["name"] == self.subtexture_list.currentItem().text())
             self.runExtraction(tasks=[(self.current_atlas, st)])
 
-        else: # No subtexture selected -> export the full atlas
+        else: # No subtexture selected, export the full atlas
             out_path = Path.cwd() / "Output" /"_Atlases"
             out_path.mkdir(parents=True, exist_ok=True)
             atlas_img = self.getPilImage(self.current_atlas)
@@ -429,7 +458,7 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Saved", f"Atlas {self.current_atlas} saved to {out_path}")
 
     def saveAll(self):
-        """Export all subtextures from the currently selected atlas only."""
+        """Export all subtextures from the currently selected atlas"""
         if not self.current_atlas:
             QMessageBox.warning(self, "Warning", "No atlas selected.")
             return
@@ -442,13 +471,24 @@ class MainWindow(QMainWindow):
         self.runExtraction(tasks=tasks)
 
     def dumpTextures(self):
+        """Export all subtextures into directories for their atlases"""
         self.runExtraction()
 
 def main():
     app = QApplication(sys.argv)
+
+    if getattr(sys, 'frozen', False):
+        base_path = Path(sys._MEIPASS)
+    else:
+        base_path = Path(__file__).parent
+
+    app.setWindowIcon(QIcon(str(base_path / "icon.ico")))
     window = MainWindow()
     window.show()
     sys.exit(app.exec_())
 
 if __name__ == "__main__":
     main()
+
+# nuitka --standalone --onefile --windows-console-mode=disable --enable-plugin=pyqt5 --windows-icon-from-ico=icon.ico --msvc=latest --lto=yes NERSIE.py
+# pyinstaller NERSIE.py --noconsole --icon=icon.ico --add-data "icon.ico;." --collect-data soulstruct

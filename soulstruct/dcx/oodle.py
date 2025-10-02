@@ -22,7 +22,7 @@ from enum import IntEnum
 from functools import wraps
 from pathlib import Path
 
-from soulstruct.config import SEKIRO_PATH, ELDEN_RING_PATH, NIGHTREIGN_PATH
+from soulstruct.config import SEKIRO_PATH, ELDEN_RING_PATH, NIGHTREIGN_PATH  # added NR path
 from soulstruct.utilities.files import SOULSTRUCT_PATH
 
 
@@ -222,11 +222,11 @@ def decompress(comp_buf: bytes, decompressed_size: int):
 def find_oodle_dll() -> str:
     """Try to find DLL at Soulstruct, Sekiro, or Elden Ring paths."""
     _auto_oodle_locations = (
-        SOULSTRUCT_PATH(__DLL_NAME),
-        SOULSTRUCT_PATH("..", __DLL_NAME),
         SEKIRO_PATH / __DLL_NAME,
         ELDEN_RING_PATH / __DLL_NAME,
-        NIGHTREIGN_PATH / __DLL_NAME,
+        NIGHTREIGN_PATH / __DLL_NAME, # added NR path
+        SOULSTRUCT_PATH(__DLL_NAME),
+        SOULSTRUCT_PATH("..", __DLL_NAME),
     )
     for _location in _auto_oodle_locations:
         if _location.exists():
@@ -324,9 +324,10 @@ def LOAD_DLL(dll_path: str = ""):
     )
 
 # Load DLL automatically.
-try:
-    LOAD_DLL()
-except MissingOodleDLLError as load_ex:
-    _LOGGER.warning(
-        f"Could not find/load Oodle DLL. DCX_KRAK compression/decompression will be unavailable. Error: {load_ex}"
-    )
+if __name__ == "__main__": # only needs to be run on opening dcx dialog. This is a modification of the original source code
+    try:
+        LOAD_DLL()
+    except MissingOodleDLLError as load_ex:
+        _LOGGER.warning(
+            f"Could not find/load Oodle DLL. DCX_KRAK compression/decompression will be unavailable. Error: {load_ex}"
+        )

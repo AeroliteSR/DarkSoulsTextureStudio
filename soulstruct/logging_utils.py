@@ -89,12 +89,22 @@ class _SoulstructFormatter(logging.Formatter):
         else:
             record.modulepath = record.pathname
 
+        """````````````````````````````````````````````````````````````
+        This is a quick fix for relative paths breaking when program is frozen. Original source code by Grimrukh:
         # Module path links to file and line number.
         record.modulepath = (
             f"[link={Path(record.pathname).as_uri()}:{record.lineno}]"
             f"{record.modulepath}"
             f"[/link]"
-        )
+        )"""
+        try:
+            uri = Path(record.pathname).resolve().as_uri()
+        except Exception:
+            uri = str(record.pathname)
+
+        record.modulepath = f"[link={uri}:{record.lineno}]{record.modulepath}[/link]"
+        """-------------------------------------------------------------------------"""
+
         # NOTE: The string pattern 'File {path}, line {line}' in JetBrains will automatically generate an IDE link.
 
         if self._use_color:
