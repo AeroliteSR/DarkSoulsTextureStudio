@@ -6,18 +6,31 @@ from __future__ import annotations
 
 __all__ = [
     "DCXType",
+    "compress",
     "decompress",
+    "is_dcx",
 ]
 
+import io
 import logging
 import typing as tp
+import zlib
 from enum import Enum
 from pathlib import Path
+
+import zstandard as zstd
+
 from soulstruct.exceptions import SoulstructError
 from soulstruct.utilities.binary import *
+
 from . import oodle
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class DCXError(SoulstructError):
+    pass
+
 
 class DCXVersionInfo(tp.NamedTuple):
     compression_type: bytes
@@ -48,6 +61,7 @@ class DCXVersionInfo(tp.NamedTuple):
             else:
                 s += f"{_field}={v}, "
         return s[:-2] + ")"
+
 
 class DCXType(Enum):
     Unknown = -1  # could not be detected
@@ -137,6 +151,7 @@ class DCXType(Enum):
             )
             return cls.Unknown
 
+
 # Captures the field values that actually vary across DCX versions.
 DCX_VERSION_INFO = {
     DCXType.DCP_DFLT:               None,
@@ -149,6 +164,19 @@ DCX_VERSION_INFO = {
     DCXType.DCX_KRAK:               DCXVersionInfo(b"KRAK", 0x11000, 0x44, 0x4C, 6,    0,       0,         0x010100),
     DCXType.DCX_ZSTD:               DCXVersionInfo(b"ZSTD", 0x11000, 0x44, 0x4C, None, 0,       0,         0x010100),
 }
+
+
+class DCPHeaderStruct(BinaryStruct):
+    """Early, abbreviated compression version (Demon's Souls only)."""
+    dcp: bytes = binary_string(4, asserted=b"DCP", init=False)
+    dflt: bytes = binary_string(4, asserted=b"DFLT", init=False)
+    unks: list[int] = binary_array(6, asserted=[0x20, 0x9000000, 0, 0, 0, 0x10100], init=False)
+    dcs: bytes = binary_string(4, asserted=b"DCS", init=False)
+    decompressed_size: int
+    compressed_size: int
+
+    DEFAULT_BYTE_ORDER = ByteOrder.BigEndian
+
 
 class DCXHeaderStruct(BinaryStruct):
     """Compression header (with variation in the `version` fields) in all FromSoft games after Demon's Souls.
@@ -189,6 +217,62 @@ class DCXHeaderStruct(BinaryStruct):
             version7=self.version7,
         )
 
+
+class DCXEdgeSubheader(BinaryStruct):
+    dca: bytes = binary_string(4, asserted=b"DCA", init=False)
+    dca_size: int
+    egdt: bytes = binary_string(4, asserted=b"EgdT", init=False)
+    unk1: int = binary(asserted=0x10100, init=False)
+    unk2: int = binary(asserted=0x24, init=False)
+    unk3: int = binary(asserted=0x10, init=False)
+    unk4: int = binary(asserted=0x10000, init=False)
+    last_block_decompressed_size: int
+    egdt_size: int
+    chunk_count: int
+    unk5: int = binary(asserted=0x100000, init=False)
+
+    DEFAULT_BYTE_ORDER = ByteOrder.BigEndian
+
+
+def _decompress_dcx_edge(reader: BinaryReader, header: DCXHeaderStruct) -> tuple[bytes, DCXType]:
+    dca_start = reader.position  # position of 'DCA' magic
+    subheader = DCXEdgeSubheader.from_bytes(reader)
+    if header.version3 != 0x50 + subheader.chunk_count * 0x10:
+        raise DCXError("DCX_EDGE header 'version3' field does not match expected value (0x50 + chunk_count * 0x10).")
+    if subheader.last_block_decompressed_size not in {0x10000, header.decompressed_size % 0x10000}:
+        raise DCXError("DCX_EDGE subheader 'last_block_decompressed_size' does not match expected value.")
+    if subheader.egdt_size != 0x24 + subheader.chunk_count * 0x10:
+        print(subheader)
+        raise DCXError("DCX_EDGE subheader 'egdt_size' does not match expected value.")
+
+    chunks_offset = dca_start + subheader.dca_size
+    decompressed = bytearray()
+    for i in range(subheader.chunk_count):
+        zero, offset, chunk_size, is_compressed_int = reader.unpack("4i")
+        if zero != 0:
+            raise DCXError("DCX_EDGE chunk 'zero' field is not 0.")
+        if is_compressed_int not in {0, 1}:
+            raise DCXError("DCX_EDGE chunk 'is_compressed' field is not 0 or 1.")
+        chunk = reader.unpack_bytes(length=chunk_size, offset=chunks_offset + offset)
+        if is_compressed_int:
+            # Decompress using DEFLATE method. We use and flush a new Decompressor object for each chunk.
+            # Decompressed chunks may occasionally be smaller than expected (0x10000 or final chunk size), so we pad as
+            # necessary after each one.
+            decompressor = zlib.decompressobj(-zlib.MAX_WBITS)
+            decompressed_chunk = decompressor.decompress(chunk)
+            decompressed_chunk += decompressor.flush()
+            expected_decompressed_size = (
+                0x10000 if i < subheader.chunk_count - 1 else subheader.last_block_decompressed_size
+            )
+            decompressed_size = len(decompressed_chunk)
+            if decompressed_size < expected_decompressed_size:
+                decompressed_chunk += b"\0" * (expected_decompressed_size - decompressed_size)
+            decompressed += decompressed_chunk
+        else:
+            decompressed += chunk
+    return decompressed, DCXType.DCX_EDGE
+
+
 def decompress(dcx_source: bytes | BinaryReader | tp.BinaryIO | Path | str) -> tuple[bytes, DCXType]:
     """Decompress the given file path, raw bytes, or buffer/reader.
 
@@ -197,15 +281,153 @@ def decompress(dcx_source: bytes | BinaryReader | tp.BinaryIO | Path | str) -> t
     """
     reader = BinaryReader(dcx_source, byte_order=ByteOrder.BigEndian)  # always big-endian
     dcx_type = DCXType.detect(reader)
-    header = DCXHeaderStruct.from_bytes(reader, byte_order=ByteOrder.BigEndian)
+
+    if dcx_type == DCXType.Unknown:
+        raise DCXError("Unknown DCX type. Cannot decompress.")
+    if dcx_type == DCXType.DCP_DFLT:
+        header = DCPHeaderStruct.from_bytes(reader, byte_order=ByteOrder.BigEndian)
+    else:
+        header = DCXHeaderStruct.from_bytes(reader, byte_order=ByteOrder.BigEndian)
+
+    if dcx_type == DCXType.DCX_EDGE:
+        return _decompress_dcx_edge(reader, header)
+
     reader.unpack_bytes(length=4, asserted=b"DCA")
     reader.unpack_value("i", asserted=8)  # compressed header size
     compressed = reader.read(header.compressed_size)
-    decompressed = oodle.decompress(compressed, header.decompressed_size)
+
+    if dcx_type == DCXType.DCX_ZSTD:
+        # TODO: Use compression level from header?
+        dctx = zstd.ZstdDecompressor()
+        with dctx.stream_reader(io.BytesIO(compressed)) as r:
+            decompressed = r.read()  # read() until EOF
+    elif dcx_type == DCXType.DCX_KRAK:
+        decompressed = oodle.decompress(compressed, header.decompressed_size)
+    else:
+        decompressed = zlib.decompressobj().decompress(compressed)
 
     if len(decompressed) != header.decompressed_size:
-        raise SoulstructError("Decompressed DCX data size does not match size in header.")
+        raise DCXError("Decompressed DCX data size does not match size in header.")
     return decompressed, dcx_type
+
+
+def _compress_dcx_edge(raw_data: bytes) -> bytes:
+    """Use DEFLATE compression and return compressed chunks after packed subheader."""
+    writer = BinaryWriter(byte_order=ByteOrder.BigEndian)
+
+    chunk_count = len(raw_data) // 0x10000
+    last_block_decompressed_size = len(raw_data) % 0x10000
+    if last_block_decompressed_size > 0:
+        chunk_count += 1  # add one more chunk for the remainder
+
+    version_info = DCXType.DCX_EDGE.get_version_info()
+    header = DCXHeaderStruct(
+        version1=version_info.version1,
+        version2=version_info.version2,
+        version3=0x50 + chunk_count * 0x10,
+        compression_type=version_info.compression_type,
+        decompressed_size=len(raw_data),
+        compressed_size=RESERVED,
+        compression_level=version_info.compression_level,
+        version5=version_info.version5,
+        version6=version_info.version6,
+        version7=version_info.version7,
+    )
+    header.to_writer(writer)
+
+    dca_start = writer.position
+    egdt_start = dca_start + 8  # after b'DCA\0' magic and 'dca_size'
+    subheader = DCXEdgeSubheader(
+        dca_size=RESERVED,
+        last_block_decompressed_size=last_block_decompressed_size,
+        egdt_size=RESERVED,
+        chunk_count=chunk_count,
+    )
+    subheader.to_writer(writer)
+
+    for i in range(chunk_count):
+        writer.pack("i", 0)  # pad
+        writer.reserve(f"offset{i}", "i")
+        writer.reserve(f"size{i}", "i")
+        writer.reserve(f"is_compressed{i}", "i")
+
+    subheader.fill(writer, "dca_size", writer.position - dca_start)
+    subheader.fill(writer, "egdt_size", writer.position - egdt_start)
+    
+    data_start = writer.position
+    compressed_size = 0
+    for i in range(chunk_count):
+        # 64 KB chunks, except for whatever is left in the last one.
+        decompressed_chunk_size = 0x10000 if i < chunk_count - 1 else last_block_decompressed_size
+        compressor = zlib.compressobj(level=9, method=zlib.DEFLATED, wbits=-zlib.MAX_WBITS)
+        raw_offset = i * 0x10000
+        decompressed_chunk = raw_data[raw_offset:raw_offset + decompressed_chunk_size]
+        chunk = compressor.compress(decompressed_chunk)
+        chunk += compressor.flush(zlib.Z_FINISH)
+        chunk_compressed_size = len(chunk)
+        
+        writer.fill(f"offset{i}", writer.position - data_start)
+        writer.fill(f"size{i}", chunk_compressed_size)
+        writer.fill(f"is_compressed{i}", int(chunk_compressed_size < decompressed_chunk_size))
+        compressed_size += chunk_compressed_size
+        writer.append(chunk)
+        writer.pad_align(0x10)
+
+    header.fill(writer, "compressed_size", compressed_size)
+
+    return bytes(writer)
+
+
+def _compress_dcx_zstd(raw_data: bytes, compression_level=15) -> bytes:
+    cparams = zstd.ZstdCompressionParameters.from_level(
+        compression_level,
+        window_log=16,
+    )
+    cctx = zstd.ZstdCompressor(
+        compression_params=cparams,
+        write_content_size=False,
+    )
+    return cctx.compress(raw_data)
+
+
+def compress(raw_data: bytes, dcx_type: DCXType) -> bytes:
+    """Compress `raw_data` with DCX of `dcx_type`.
+
+    Returns bytes that are ready to be written to a DCX file.
+    """
+    if dcx_type == DCXType.DCX_EDGE:
+        # This does enough differently that we build the DCX header inside the sub-function.
+        return _compress_dcx_edge(raw_data)
+
+    if dcx_type == DCXType.DCX_ZSTD:
+        compressed = _compress_dcx_zstd(raw_data)
+    elif dcx_type == DCXType.DCX_KRAK:
+        compressed = oodle.compress(raw_data)  # default compressor and compression level are correct
+    else:
+        compressed = zlib.compress(raw_data, level=7)
+
+    if dcx_type == DCXType.DCP_DFLT:
+        header = bytes(DCPHeaderStruct(
+            decompressed_size=len(raw_data),
+            compressed_size=len(compressed),
+        ))
+    else:
+        version_info = dcx_type.get_version_info()
+        header = bytes(DCXHeaderStruct(
+            version1=version_info.version1,
+            version2=version_info.version2,
+            version3=version_info.version3,
+            compression_type=version_info.compression_type,
+            decompressed_size=len(raw_data),
+            compressed_size=len(compressed),
+            compression_level=version_info.compression_level,
+            version5=version_info.version5,
+            version6=version_info.version6,
+            version7=version_info.version7,
+        ))
+        header += b"DCA\0" + b"\x00\x00\x00\x08"
+    return header + compressed
+
 
 def is_dcx(reader: BinaryReader) -> bool:
     """Checks if file data starts with DCX (or DCP) magic."""

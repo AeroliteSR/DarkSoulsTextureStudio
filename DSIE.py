@@ -1,33 +1,49 @@
-import sys
-import io
-import shutil
+import sys, os, io, shutil
+import numpy as np
+from io import BytesIO
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout,
     QListWidget, QLabel, QHBoxLayout, QFileDialog,
-    QPushButton, QMessageBox, QSplitter, QAction, QProgressDialog)
+    QPushButton, QMessageBox, QSplitter, QAction, QProgressDialog, QInputDialog)
 from PyQt5.QtGui import QPixmap, QImage, QIcon, QDesktopServices
 from PyQt5.QtCore import Qt, QObject, pyqtSignal, QThread, QUrl
-from PIL import Image
+from PIL import Image, ImageDraw
 from soulstruct.containers import tpf
 from soulstruct.dcx import core, oodle
+from GameInfo import SubTextureMap
 
 class Functions():
     @staticmethod
     def getLayoutData(dcx_path):
         with open(dcx_path, "rb") as f:
             decompressed_bytes, _ = core.decompress(f)
-            start_index = decompressed_bytes.find(b"<")
+            start_index = decompressed_bytes.find(b"<TextureAtlas")
             xml_bytes = decompressed_bytes[start_index:]
             xml_text = xml_bytes.decode("utf-8", errors="ignore").replace("\x00", "")
             return f"<Root>{xml_text}</Root>"
 
     @staticmethod
+    def createDebugGrid(image, tiles_per_column, tiles_per_row, tile_width, tile_height):
+        """Outputs a png with grid lines for debugging"""
+        debug = image.copy()
+        draw = ImageDraw.Draw(debug)
+
+        for row in range(tiles_per_column):
+            for col in range(tiles_per_row):
+                x = col * tile_width
+                y = row * tile_height
+                draw.rectangle([x, y, x + tile_width, y + tile_height], outline="red", width=1)
+
+        debug.save("debug_grid.png")
+
+    @staticmethod
     def loadTextures(dcx_path, layout_path):
-        """Load textures from the TPF.DCX and parse layout XML"""
+        """Load textures from the TPF.DCX and parse layout XML
+        This function is no longer used"""
         layout_xml = Functions.getLayoutData(layout_path)
-        root = ET.fromstring(layout_xml)
+        root = ET.fromstring(layout_xml, parser=None) # SET TO PARSER IF USED
 
         tpfdcx = tpf.TPF.from_path(dcx_path)
         textures_dict = {texture.stem: texture for texture in tpfdcx.textures}
@@ -43,7 +59,7 @@ class Functions():
                 print(f"{filename} not found in TPF textures, skipping.")
                 continue
 
-            # Convert DDS → PIL Image
+            # Convert DDS to PIL Image
             texture = textures_dict[filename]
             with io.BytesIO(texture.data) as dds_buffer:
                 dds_buffer.seek(0)
@@ -67,57 +83,138 @@ class LoadWorker(QObject):
     progress = pyqtSignal(int, str)   # percent, message
     finished = pyqtSignal(dict, dict)  # atlases, subtextures
 
-    def __init__(self, dcx_path, layout_path):
+    def __init__(self, dcx_path, layout_path, game_type):
         super().__init__()
         self.dcx_path = dcx_path
         self.layout_path = layout_path
+        self.game = game_type
+        self.parser = ET.XMLParser(encoding="utf-8")
 
     def run(self):
+        if self.game in ['Dark Souls 1', 'Dark Souls 2', 'Dark Souls 3',]:
+            self.processOld()
+        else: # sblyt is used
+            self.processModern()
+
+    def generateTextDict(self):
+        textures_dict: dict = {}
+        self.progress.emit(0, "Opening DCX files...")
+        if self.dcx_path.is_dir():
+            for file in os.listdir(self.dcx_path):
+                if file.endswith('tpf.dcx') or file.endswith('.tpf'):
+                    path = Path(self.dcx_path) / file
+                    tpfdcx = tpf.TPF(path)
+                    for texture in tpfdcx.textures:
+                        textures_dict[texture.stem] = texture
+        else:
+            tpfdcx = tpf.TPF(self.dcx_path)
+            for texture in tpfdcx.textures:
+                textures_dict[texture.stem] = texture
+
+        self.progress.emit(10, "Parsing textures...")
+        return textures_dict
+
+    def processModern(self):
         try:
-            layout_xml = Functions.getLayoutData(self.layout_path)
-            root = ET.fromstring(layout_xml)
+            atlases = {}
+            subtextures = {}
+            textures_dict: dict = self.generateTextDict()
 
-            self.progress.emit(0, "Opening DCX file...")
-            tpfdcx = tpf.TPF.from_path(self.dcx_path)
-            self.progress.emit(10, "Parsing textures...")
-            textures_dict = {texture.stem: texture for texture in tpfdcx.textures}
-            self.progress.emit(20, "Parsing layout XML...")
+            if self.layout_path:
+                layout_xml = Functions.getLayoutData(self.layout_path)
+                root = ET.fromstring(layout_xml, parser=self.parser)
+                self.progress.emit(20, "Parsing layout XML...")
 
+                atlas_nodes = root.findall("TextureAtlas")
+                total = len(atlas_nodes)
+
+                if total == 0:
+                    self.progress.emit(100, "No atlases found")
+                    return
+
+                for i, texture_atlas in enumerate(atlas_nodes, 1):
+                    filepath = texture_atlas.get("imagePath")
+                    filename = Path(filepath).stem
+
+                    if filename not in textures_dict:
+                        self.progress.emit(20 + int(i / total * 80), f"{filename} not found, skipping.")
+                        continue
+
+                    atlases[filename] = textures_dict[filename]  # store raw texture
+                    subtextures[filename] = []
+
+                    for sub in texture_atlas.findall("SubTexture"):
+                        subtextures[filename].append({
+                            "name": sub.get("name"),
+                            "x": int(sub.get("x")),
+                            "y": int(sub.get("y")),
+                            "width": int(sub.get("width")),
+                            "height": int(sub.get("height")),
+                        })
+
+                    self.progress.emit(20 + int(i / total * 80), f"Loaded {filename}")
+
+                self.finished.emit(atlases, subtextures)
+            
+            else: # single, non 01_common file
+                for i, (name, texture) in enumerate(textures_dict.items(), 1):
+                    atlases[name] = texture
+                self.finished.emit(atlases, {})
+
+        except Exception as e:
+            print(e)
+            self.progress.emit(0, f"Error: {e}")
+            self.finished.emit({}, {})
+
+    def processOld(self):  
+        try:
+            textures_dict: dict = self.generateTextDict()
             atlases = {}
             subtextures = {}
 
-            atlas_nodes = root.findall("TextureAtlas")
-            total = len(atlas_nodes)
+            for i, (name, texture) in enumerate(textures_dict.items(), 1):
+                atlases[name] = texture
+                subtextures[name] = []
+                dds = texture.get_dds()
+                image = Image.open(BytesIO(dds.to_bytes())).convert("RGBA")
 
-            if total == 0:
-                self.progress.emit(100, "No atlases found")
-                return
+                texmap = SubTextureMap.TexMap[self.game]
+                dimensions = texmap.get(name, None)
+                if dimensions:
+                    tile_width, tile_height = dimensions['width'], dimensions['height']
 
-            for i, texture_atlas in enumerate(atlas_nodes, 1):
-                filepath = texture_atlas.get("imagePath")
-                filename = Path(filepath).stem
+                    atlas_width, atlas_height = dds.header.width, dds.header.height
+                    tiles_per_row = atlas_width // tile_width
+                    tiles_per_column = atlas_height // tile_height
+                    #Functions.createDebugGrid(image, tiles_per_column, tiles_per_row, tile_width, tile_height)
 
-                if filename not in textures_dict:
-                    self.progress.emit(20 + int(i / total * 80), f"{filename} not found, skipping.")
-                    continue
+                    total_tiles = tiles_per_row * tiles_per_column
 
-                atlases[filename] = textures_dict[filename]  # store raw texture
-                subtextures[filename] = []
+                    for idx in range(total_tiles):
+                        row = idx // tiles_per_row
+                        col = idx % tiles_per_row
+                        x = col * tile_width
+                        y = row * tile_height
 
-                for sub in texture_atlas.findall("SubTexture"):
-                    subtextures[filename].append({
-                        "name": sub.get("name"),
-                        "x": int(sub.get("x")),
-                        "y": int(sub.get("y")),
-                        "width": int(sub.get("width")),
-                        "height": int(sub.get("height")),
-                    })
+                        tile = image.crop((x, y, x + tile_width, y + tile_height))
+                        alpha = np.array(tile.getchannel("A"))
+                        opacity_ratio = np.count_nonzero(alpha) / alpha.size
+                        if opacity_ratio < 0.01:
+                            continue # skip saving subtexture if it's blank
 
-                self.progress.emit(20 + int(i / total * 80), f"Loaded {filename}")
+                        subtextures[name].append({
+                            "name": f"{name}_{idx}",
+                            "x": x,
+                            "y": y,
+                            "width": tile_width,
+                            "height": tile_height})
+
+                    self.progress.emit(10 + int(i / len(textures_dict) * 90), f"Processed {name}")
 
             self.finished.emit(atlases, subtextures)
 
         except Exception as e:
+            print(e)
             self.progress.emit(0, f"Error: {e}")
             self.finished.emit({}, {})
 
@@ -158,7 +255,10 @@ class ExtractWorker(QObject):
 
             out_path = self.output_dir / atlas_name
             os.makedirs(out_path, exist_ok=True)
-            cropped.save(out_path / st["name"])
+            filename = st['name']
+            if not filename.endswith('.png'):
+                filename = f"{filename}.png"
+            cropped.save(out_path / filename)
 
             percent = int(i / total * 100)
             self.progress.emit(percent, f"Exported {st['name']} from {atlas_name}")
@@ -171,7 +271,7 @@ class MainWindow(QMainWindow):
         # Create project directory path
         self.project_dir = project_dir
 
-        self.setWindowTitle("NERSIE")
+        self.setWindowTitle("DSIE")
         self.setGeometry(100, 100, 1100, 700)
         self.createMenu()
 
@@ -238,7 +338,8 @@ class MainWindow(QMainWindow):
             return action
 
         file_menu = menubar.addMenu("File")
-        file_menu.addAction(createAction("Open", self.openDcxDialog))
+        file_menu.addAction(createAction("Open File", lambda: self.openDcxDialog(dirmode=False)))
+        file_menu.addAction(createAction("Open Directory", lambda: self.openDcxDialog(dirmode=True)))
         file_menu.addAction(createAction("Clear", self.clear))
         file_menu.addAction(createAction("Dump All Subtextures", self.dumpTextures))
         file_menu.addSeparator()
@@ -248,6 +349,7 @@ class MainWindow(QMainWindow):
         help_menu.addAction(createAction("About", self.showAbout))
 
     def clear(self):
+        self.setWindowTitle("DSIE")
         self.atlas_list.clear()
         self.subtexture_list.clear()
         self.preview_label.setText("Select an atlas or subtexture")
@@ -280,26 +382,91 @@ class MainWindow(QMainWindow):
                         
                     except Exception as e:
                         QMessageBox.critical(self, "Error", f"Failed to load DLL:\n{e}")
-            
-    def openDcxDialog(self):       
+
+    def gameTypeDialog(self):
+        options = ["Dark Souls 1", "Dark Souls 2", "Dark Souls 3", "Sekiro", "Elden Ring", "Nightreign",]
+        choice, ok = QInputDialog.getItem(None, "Select Game Type", "Choose one of the following:", options, 0, False)
+
+        if choice and ok:
+            return choice
+
+    def openDcxDialog(self, dirmode: bool = False):       
         self.clear() 
         self.checkOodleDLL()
-        file_path = Path(QFileDialog.getOpenFileName(self, "Navigate to 01_common.tpf.dcx", "", "DCX Files (*.dcx)")[0])
-
-        if file_path.parent.stem in ['hi', 'low']: # sekiro/ER file system
-            try_layout = file_path.parent / "01_common.sblytbnd.dcx"
-        else: # NR file system
-            filetext = "01_common_h.sblytbnd.dcx" if file_path.name == "01_common_h.tpf.dcx" else "01_common_l.sblytbnd.dcx" # high or low res versions
-            try_layout = file_path.parent / filetext
-
-        if try_layout.exists():
-            layout_path = try_layout
+        if not dirmode:
+            file_path = Path(QFileDialog.getOpenFileName(self, "Select DCX file", "", "DCX Files (*.dcx);;TPF Files (*.tpf)")[0])
         else:
-            layout_path = Path(QFileDialog.getOpenFileName(None, "Navigate to 01_common(_h).sblytbnd.dcx", "", "DCX Files (*.dcx)")[0])
+            file_path = Path(QFileDialog.getExistingDirectory(self, "Select Menu folder"))
 
-        if not file_path or not layout_path:
+        if not file_path or not file_path.exists():
             return
+        
+        str_path = str(file_path)
+        self.setWindowTitle(f"DSIE - {str_path}")
+        if "DARK SOULS REMASTERED" in str_path:
+            game_type = 'Dark Souls 1'
+        elif "Dark Souls II Scholar of the First Sin" in str_path:
+            game_type = 'Dark Souls 2'
+        elif "DARK SOULS III" in str_path:
+            game_type = 'Dark Souls 3'
+        elif "Sekiro" in str_path:
+            game_type = 'Sekiro'
+        elif "ELDEN RING NIGHTREIGN" in str_path:
+            game_type = 'Nightreign'
+        elif "ELDEN RING" in str_path:
+            game_type = 'Elden Ring'
+        else:
+            game_type = self.gameTypeDialog()
 
+        layout_path = None
+        if game_type in ['Sekiro', 'Elden Ring', 'Nightreign']: # HANDLE MODERN GAMES
+            if game_type != 'Nightreign':
+                if file_path.is_dir():
+                    if '01_common.tpf.dcx' in os.listdir(file_path):
+                        try_layout = file_path / '01_common.sblytbnd.dcx'
+                        if try_layout.exists():
+                            layout_path = try_layout
+                        else:
+                            layout_path = Path(QFileDialog.getOpenFileName(None, "Navigate to 01_common(_h/_l).sblytbnd.dcx", "", "DCX Files (*.dcx)")[0])
+
+                else: # single file
+                    if file_path.name == '01_common.tpf.dcx':
+                        try_layout = file_path.parent / '01_common.sblytbnd.dcx'
+                        if try_layout.exists():
+                            layout_path = try_layout
+                        else:
+                            layout_path = Path(QFileDialog.getOpenFileName(None, "Navigate to 01_common(_h/_l).sblytbnd.dcx", "", "DCX Files (*.dcx)")[0])
+
+            else: # Game is nightreign, use different  file system
+                if file_path.is_dir():
+                    folder_contents = os.listdir(file_path)
+                    if '01_common_h.sblytbnd.dcx' in folder_contents and '01_common_l.sblytbnd.dcx' in folder_contents:
+                        choice, ok = QInputDialog.getItem(self, "Select Resolution", "Directory contains both low and high res layouts. Which do you want to load?", ["High (01_common_h)", "Low (01_common_l)"], 0, False)
+                        if not ok:
+                            return
+                        
+                        if choice == "High (01_common_h)":
+                            filetext = "01_common_h.sblytbnd.dcx"
+                        else: # low res
+                            filetext = "01_common_l.sblytbnd.dcx"
+                        layout_path = file_path / filetext
+                        
+                else: # single file
+                    if file_path.stem.startswith('01_common'):
+                        filetext = "01_common_h.sblytbnd.dcx" if file_path.name == "01_common_h.tpf.dcx" else "01_common_l.sblytbnd.dcx" # high or low res versions
+                        try_layout = file_path.parent / filetext
+                        if try_layout.exists():
+                            layout_path = try_layout
+                        else:
+                            layout_path = Path(QFileDialog.getOpenFileName(None, "Navigate to 01_common(_h/_l).sblytbnd.dcx", "", "DCX Files (*.dcx)")[0])
+
+            if layout_path:
+                if not layout_path.exists() or layout_path == Path('.') or not layout_path.stem.endswith('sblytbnd'):
+                    layout_path = None
+            
+        else: # OLDER GAMES
+            layout_path = None
+        
         self.progress_dialog = QProgressDialog("Loading DCX...", None, 0, 100, self)
         self.progress_dialog.setWindowTitle("Loading")
         self.progress_dialog.setWindowModality(Qt.ApplicationModal)
@@ -307,7 +474,7 @@ class MainWindow(QMainWindow):
         self.progress_dialog.show()
 
         self.thread = QThread()
-        self.worker = LoadWorker(file_path, layout_path)
+        self.worker = LoadWorker(file_path, layout_path, game_type)#; print(file_path, layout_path, game_type)
         self.worker.moveToThread(self.thread)
 
         self.worker.progress.connect(self.updateProgress)
@@ -379,8 +546,7 @@ class MainWindow(QMainWindow):
         QMessageBox.information(
             self,
             "About",
-            "This program uses lazy loading to save your memory from getting fucked\n\n"
-            "Larger atlases may take a second or two to load."
+            "Nothing here yet :>"
         )
 
     def pil2Qpixmap(self, pil_img, max_size=(600, 400)):

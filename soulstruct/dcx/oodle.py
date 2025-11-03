@@ -11,6 +11,7 @@ from __future__ import annotations
 __all__ = [
     "MissingOodleDLLError",
     "OodleDLLError",
+    "compress",
     "decompress",
     "LOAD_DLL",
 ]
@@ -22,7 +23,7 @@ from enum import IntEnum
 from functools import wraps
 from pathlib import Path
 
-from soulstruct.config import SEKIRO_PATH, ELDEN_RING_PATH, NIGHTREIGN_PATH  # added NR path
+from soulstruct.config import SEKIRO_PATH, ELDEN_RING_PATH
 from soulstruct.utilities.files import SOULSTRUCT_PATH
 
 
@@ -184,6 +185,40 @@ def _dll_func_wrapper(func):
         return func(*args, **kwargs)
     return wrapped
 
+
+@_dll_func_wrapper
+def compress(
+    raw_buf: bytes,
+    compressor: Compressor = Compressor.Kraken,
+    level: CompressionLevel = CompressionLevel.Optimal2,
+) -> bytes:
+    """Compress data with Oodle. Default parameters are appropriate for Sekiro and Elden Ring (DCX_KRAK)."""
+    raw_buf_size = len(raw_buf)
+    # noinspection PyCallingNonCallable,PyTypeChecker
+    raw_buf_array = (c.c_char * raw_buf_size)(*raw_buf)
+    max_comp_buf_size = __DLL_GetCompressedBufferSizeNeeded(raw_buf_size)
+    comp_buf_array = (c.c_char * max_comp_buf_size)()
+
+    p_options = __DLL_CompressOptions_GetDefault(compressor, level)
+    p_options.contents.seekChunkReset = True  # required for the game to not crash --TK
+    p_options.contents.seekChunkLen = 0x40000  # already default, but included for authenticity --TK
+
+    actual_comp_buf_size = __DLL_Compress(
+        compressor,
+        raw_buf_array,
+        raw_buf_size,
+        comp_buf_array,
+        level,
+        p_options,
+        c.c_void_p(),
+        c.c_void_p(),
+        c.c_void_p(),
+        0,
+    )
+
+    return comp_buf_array.raw[:actual_comp_buf_size]
+
+
 @_dll_func_wrapper
 def decompress(comp_buf: bytes, decompressed_size: int):
     """Uses the same default values as `SoulsFormats`.
@@ -219,14 +254,14 @@ def decompress(comp_buf: bytes, decompressed_size: int):
 
     return raw_buf_array.raw[:actual_raw_buf_size]
 
+
 def find_oodle_dll() -> str:
     """Try to find DLL at Soulstruct, Sekiro, or Elden Ring paths."""
     _auto_oodle_locations = (
-        SEKIRO_PATH / __DLL_NAME,
-        ELDEN_RING_PATH / __DLL_NAME,
-        NIGHTREIGN_PATH / __DLL_NAME, # added NR path
         SOULSTRUCT_PATH(__DLL_NAME),
         SOULSTRUCT_PATH("..", __DLL_NAME),
+        SEKIRO_PATH / __DLL_NAME,
+        ELDEN_RING_PATH / __DLL_NAME,
     )
     for _location in _auto_oodle_locations:
         if _location.exists():
@@ -323,11 +358,11 @@ def LOAD_DLL(dll_path: str = ""):
         c.c_bool,  # corruptionPossible
     )
 
+
 # Load DLL automatically.
-if __name__ == "__main__": # only needs to be run on opening dcx dialog. This is a modification of the original source code
-    try:
-        LOAD_DLL()
-    except MissingOodleDLLError as load_ex:
-        _LOGGER.warning(
-            f"Could not find/load Oodle DLL. DCX_KRAK compression/decompression will be unavailable. Error: {load_ex}"
-        )
+try:
+    LOAD_DLL()
+except MissingOodleDLLError as load_ex:
+    _LOGGER.warning(
+        f"Could not find/load Oodle DLL. DCX_KRAK compression/decompression will be unavailable. Error: {load_ex}"
+    )
