@@ -19,8 +19,9 @@ You can either open a dcx/tpf file or a directory of them (such as your menu fol
 The leftmost scrollarea are your atlases, the middle is for subtextures, and the right is the preview.  
 Modern games (Sekiro and newer) use a layout system to define where subtextures start and end in the atlas,  
 this means that they can be automatically cropped to the correct size when loading.  
-Older games (DSR and DS3) instead just use a numbered grid system. I have already mapped some of the more uniform atlases in GameInfo.py  
-which will be split correctly into subtextures. Dark Souls 2 doesn't use atlases and just keeps a folder of thousands of images, making it hard to organize.  
+Older games (DSR and DS3) instead just use a numbered grid system. I have already mapped some of the more uniform atlases in `GameInfo.py`
+which will be split correctly into subtextures.  
+Dark Souls 2 doesn't use atlases and just keeps a folder of thousands of images, making it hard to organize.  
 
 # Licensing and info:
 This project includes code from the SoulStruct library:  
