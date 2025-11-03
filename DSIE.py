@@ -664,5 +664,5 @@ def main():
 if __name__ == "__main__":
     main()
 
-# nuitka --standalone --onefile --windows-console-mode=disable --enable-plugin=pyqt5 --windows-icon-from-ico=icon.ico --include-data-file=icon.ico=icon.ico --msvc=latest --lto=yes NERSIE.py
-# pyinstaller NERSIE.py --noconsole --icon=icon.ico --add-data "icon.ico;." --collect-data soulstruct
+# nuitka --standalone --onefile --windows-console-mode=disable --enable-plugin=pyqt5 --windows-icon-from-ico=icon.ico --include-data-file=icon.ico=icon.ico --msvc=latest --lto=yes DSIE.py
+# pyinstaller DSIE.py --noconsole --icon=icon.ico --add-data "icon.ico;." --collect-data soulstruct
