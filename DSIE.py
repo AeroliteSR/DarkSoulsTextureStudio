@@ -560,11 +560,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Error", f"Failed to find subtextures")
 
     def showAbout(self):
-        QMessageBox.information(
-            self,
-            "About",
-            "Nothing here yet :>"
-        )
+        QMessageBox.information(self, "About", "Made by <a href='https://linktr.ee/aerolitesr'>Aero</a> :><br><br>")
 
     def pil2Qpixmap(self, pil_img, max_size=(600, 400)):
         """Convert PIL Image to QPixmap without destroying the aspect ratio lol"""
