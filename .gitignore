@@ -5,10 +5,10 @@ FS-Icon-Extractor.exe
 .gitignore
 icon.ico
 App/
-NERSIE.build/
-NERSIE.dist/
-NERSIE.onefile-build/
-NERSIE.exe
+DSIE.build/
+DSIE.dist/
+DSIE.onefile-build/
+DSIE.exe
 nuitka-crash-report.xml
 Stuff/
 oo2core_6_win64.dll
