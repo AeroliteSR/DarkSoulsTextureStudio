@@ -389,6 +389,7 @@ class MainWindow(QMainWindow):
 
         if choice and ok:
             return choice
+        return None
 
     def openDcxDialog(self, dirmode: bool = False):       
         self.clear() 
@@ -398,7 +399,7 @@ class MainWindow(QMainWindow):
         else:
             file_path = Path(QFileDialog.getExistingDirectory(self, "Select Menu folder"))
 
-        if not file_path or not file_path.exists():
+        if not file_path or file_path == Path('.'):
             return
         
         str_path = str(file_path)
@@ -417,6 +418,8 @@ class MainWindow(QMainWindow):
             game_type = 'Elden Ring'
         else:
             game_type = self.gameTypeDialog()
+            if not game_type:
+                return
 
         layout_path = None
         if game_type in ['Sekiro', 'Elden Ring', 'Nightreign']: # HANDLE MODERN GAMES
