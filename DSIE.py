@@ -377,7 +377,7 @@ class MainWindow(QMainWindow):
                         oodle.LOAD_DLL(dll)
                         # Copy DLL next to the exe for future runs
                         shutil.copy(dll, target)
-                        QMessageBox.information(self, "DLL Copied", f"{dll.name} has been copied to NERSIE\n"
+                        QMessageBox.information(self, "DLL Copied", f"{dll.name} has been copied to DSIE.\n"
                                                                     "Future runs will automatically use this DLL.")
                         
                     except Exception as e:
