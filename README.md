@@ -23,6 +23,9 @@ Older games (DSR and DS3) instead just use a numbered grid system. I have alread
 which will be split correctly into subtextures.  
 Dark Souls 2 doesn't use atlases and just keeps a folder of thousands of images, making it hard to organize.  
 
+Note: The high resolution versions of Elden Ring's icons are stored in 00_solo.tpfbdt which you can unpack with WitchyBND.
+Be aware that opening this directory in DSIE will use a LOT of resources (over 3GB of RAM in my testing) and will increase by ~4mb for each icon you load.
+
 # Licensing and info:
 This project includes code from the SoulStruct library:  
 SoulStruct: https://github.com/Grimrukh/soulstruct  

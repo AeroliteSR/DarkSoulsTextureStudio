@@ -220,28 +220,48 @@ class LoadWorker(QObject):
 
 class ExtractWorker(QObject):
     progress = pyqtSignal(int, str) # percent, message
-    finished = pyqtSignal()
+    finished = pyqtSignal(bool) # success
 
-    def __init__(self, atlases, subtextures, output_dir, loader, tasks=None):
+    def __init__(self, atlases, subtextures, output_dir, loader, tasks=None, mode='S'):
         super().__init__()
         self.atlases = atlases
         self.subtextures = subtextures
         self.output_dir = output_dir
         self.pilLoader = loader
         self.tasks = tasks if tasks is not None else []
+        self.mode = mode
         self._interrupted = False
 
     def interrupt(self):
         self._interrupted = True
 
-    def run(self):
-        import os
-        os.makedirs(self.output_dir, exist_ok=True)
+    def exportImg(self, image, filename, out_path, progress, message):
+        out_path = Path(out_path)
+        if not out_path.exists():
+            Path(out_path).mkdir(parents=True, exist_ok=True)
+        if not filename.endswith('.png'):
+            filename = f"{filename}.png"
+        image.save(out_path / filename)
+        self.progress.emit(progress, message)
 
+    def run(self):
         if not self.tasks:
-            for atlas_name, atlas_img in self.atlases.items():
-                for st in self.subtextures.get(atlas_name, []):
-                    self.tasks.append((atlas_name, st))
+            if self.mode == 'A':
+                if not self.atlases:
+                    self.finished.emit(False)
+                    return
+
+                for atlas_name in self.atlases:
+                    self.tasks.append((atlas_name, None))
+
+            elif self.mode == 'S':
+                if not self.subtextures:
+                    self.finished.emit(False)
+                    return
+
+                for atlas_name, atlas_img in self.atlases.items():
+                        for st in self.subtextures.get(atlas_name, []):
+                            self.tasks.append((atlas_name, st))
 
         total = len(self.tasks)
         for i, (atlas_name, st) in enumerate(self.tasks, 1):
@@ -249,26 +269,26 @@ class ExtractWorker(QObject):
                 break
 
             atlas_img = self.pilLoader(atlas_name=atlas_name)
-            cropped = atlas_img.crop(
-                (st["x"], st["y"], st["x"] + st["width"], st["y"] + st["height"])
-            )
-
-            out_path = self.output_dir / atlas_name
-            os.makedirs(out_path, exist_ok=True)
-            filename = st['name']
-            if not filename.endswith('.png'):
-                filename = f"{filename}.png"
-            cropped.save(out_path / filename)
-
             percent = int(i / total * 100)
-            self.progress.emit(percent, f"Exported {st['name']} from {atlas_name}")
 
-        self.finished.emit()
+            if self.mode == 'A':
+                out_path = self.output_dir / '_Atlases'
+                filename = atlas_name
+                message = f"Exported atlas: {atlas_name}"
+
+            elif self.mode == 'S':
+                out_path = self.output_dir / atlas_name
+                filename = st['name']
+                message = f"Exported {st['name']} from {atlas_name}"
+                atlas_img = atlas_img.crop((st["x"], st["y"], st["x"] + st["width"], st["y"] + st["height"])) # crop if in subtexture mode
+
+            self.exportImg(image=atlas_img, filename=filename, out_path=out_path, progress=percent, message=message)
+
+        self.finished.emit(True)
 
 class MainWindow(QMainWindow):
     def __init__(self, project_dir):
         super().__init__()
-        # Create project directory path
         self.project_dir = project_dir
 
         self.setWindowTitle("DSIE")
@@ -279,43 +299,33 @@ class MainWindow(QMainWindow):
         self.current_atlas = None
         self.thumbnail_cache = {}
 
-        # --- Layout ---
         container = QWidget()
         layout = QHBoxLayout(container)
-
         splitter = QSplitter(Qt.Horizontal)
 
-        # Left: atlas list
         self.atlas_list = QListWidget()
-        
         self.atlas_list.currentItemChanged.connect(self.showAtlas)
         splitter.addWidget(self.atlas_list)
 
-        # Middle: subtexture list
         self.subtexture_list = QListWidget()
         self.subtexture_list.currentItemChanged.connect(self.showSubtexture)
         splitter.addWidget(self.subtexture_list)
 
-        # Right: preview + buttons
-        # Right: preview + info + buttons
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
 
-        # Preview area
         self.preview_label = QLabel("Texture Preview")
         self.preview_label.setAlignment(Qt.AlignCenter)
         self.preview_label.setStyleSheet("border: 1px solid gray; background: #222; color: white;")
         self.preview_label.setFixedSize(600, 400)  # smaller preview box
         right_layout.addWidget(self.preview_label, alignment=Qt.AlignCenter)
-        
-        # Info box
+
         self.info_label = QLabel("Texture Info")
         self.info_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         self.info_label.setStyleSheet("background: #333; color: white; padding: 6px; border-radius: 4px;")
         self.info_label.setFixedHeight(150)  # fixed space for info text
         right_layout.addWidget(self.info_label)
 
-        # Buttons (optional if you keep them)
         self.save_button = QPushButton("Export Selected Texture")
         self.save_button.clicked.connect(self.saveSelection)
         right_layout.addWidget(self.save_button)
@@ -341,7 +351,8 @@ class MainWindow(QMainWindow):
         file_menu.addAction(createAction("Open File", lambda: self.openDcxDialog(dirmode=False)))
         file_menu.addAction(createAction("Open Directory", lambda: self.openDcxDialog(dirmode=True)))
         file_menu.addAction(createAction("Clear", self.clear))
-        file_menu.addAction(createAction("Dump All Subtextures", self.dumpTextures))
+        file_menu.addAction(createAction("Dump All Atlases", lambda: self.dumpTextures(mode='A')))
+        file_menu.addAction(createAction("Dump All Subtextures", lambda: self.dumpTextures(mode='S')))
         file_menu.addSeparator()
         file_menu.addAction(createAction("Exit", self.close))
 
@@ -504,7 +515,7 @@ class MainWindow(QMainWindow):
         self.preview_label.setText("Select an atlas or subtexture")
         self.info_label.setText("Image info will appear here")
 
-    def runExtraction(self, tasks=None):
+    def runExtraction(self, tasks=None, mode='S'):
         output_dir = self.project_dir / "Output"
 
         self.progress_dialog = QProgressDialog("Exporting...", "Cancel", 0, 100, self)
@@ -513,7 +524,7 @@ class MainWindow(QMainWindow):
         self.progress_dialog.show()
 
         thread = QThread(self)
-        worker = ExtractWorker(self.atlases, self.subtextures, output_dir, loader=self.getPilImage, tasks=tasks)
+        worker = ExtractWorker(self.atlases, self.subtextures, output_dir, loader=self.getPilImage, tasks=tasks, mode=mode)
         worker.moveToThread(thread)
 
         self.Ethread = thread
@@ -533,17 +544,20 @@ class MainWindow(QMainWindow):
         self.progress_dialog.setValue(percent)
         self.progress_dialog.setLabelText(message)
 
-    def extractionDone(self):
+    def extractionDone(self, success):
         self.progress_dialog.close()
-        msg = QMessageBox(self)
-        msg.setIcon(QMessageBox.Information)
-        msg.setWindowTitle("Saved")
-        msg.setText(f"Export saved to {self.project_dir / "Output"}")
-        _open = QPushButton("Open Folder")
-        msg.addButton(_open, QMessageBox.ActionRole)
-        msg.addButton(QMessageBox.Ok)
-        _open.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.project_dir / "Output"))))
-        msg.exec_()
+        if success:
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Information)
+            msg.setWindowTitle("Saved")
+            msg.setText(f"Export saved to {self.project_dir / "Output"}")
+            _open = QPushButton("Open Folder")
+            msg.addButton(_open, QMessageBox.ActionRole)
+            msg.addButton(QMessageBox.Ok)
+            _open.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.project_dir / "Output"))))
+            msg.exec_()
+        else:
+            QMessageBox.critical(self, "Error", f"Failed to find subtextures")
 
     def showAbout(self):
         QMessageBox.information(
@@ -652,9 +666,9 @@ class MainWindow(QMainWindow):
 
         self.runExtraction(tasks=tasks)
 
-    def dumpTextures(self):
-        """Export all subtextures into directories for their atlases"""
-        self.runExtraction()
+    def dumpTextures(self, mode='S'):
+        """Export all atlases or subtextures. Subtextures go into directories for their atlases"""
+        self.runExtraction(mode=mode)
 
 def main():
     app = QApplication(sys.argv)
