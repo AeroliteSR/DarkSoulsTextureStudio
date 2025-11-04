@@ -23,7 +23,7 @@ Older games (DSR and DS3) instead just use a numbered grid system. I have alread
 which will be split correctly into subtextures.  
 Dark Souls 2 doesn't use atlases and just keeps a folder of thousands of images, making it hard to organize.  
 
-Note: The high resolution versions of Elden Ring and Nightreigns's icons are stored in 00_solo(_h/l).tpfbdt which you can unpack with WitchyBND.
+Note: The high resolution versions of Elden Ring and Nightreigns's icons are stored in 00_solo(_h/l).tpfbdt which you can unpack with WitchyBND.  
 Be aware that opening this directory in DSIE will use a LOT of resources (~3.4GB of RAM for ER and ~1.3GB for NR in my testing) and will increase by ~4mb for each icon you load.
 
 # Licensing and info:
