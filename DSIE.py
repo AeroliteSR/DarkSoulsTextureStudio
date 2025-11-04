@@ -238,7 +238,7 @@ class ExtractWorker(QObject):
     def exportImg(self, image, filename, out_path, progress, message):
         out_path = Path(out_path)
         if not out_path.exists():
-            Path(out_path).mkdir(parents=True, exist_ok=True)
+            out_path.mkdir(parents=True, exist_ok=True)
         if not filename.endswith('.png'):
             filename = f"{filename}.png"
         image.save(out_path / filename)
