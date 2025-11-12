@@ -25,6 +25,32 @@ class Functions():
             return f"<Root>{xml_text}</Root>"
 
     @staticmethod
+    def parseGameType(path):
+        game_type = None
+        if "DARK SOULS REMASTERED" in path:
+            game_type = 'Dark Souls 1'
+        elif "Dark Souls II Scholar of the First Sin" in path:
+            game_type = 'Dark Souls 2'
+        elif "DARK SOULS III" in path:
+            game_type = 'Dark Souls 3'
+        elif "Sekiro" in path:
+            game_type = 'Sekiro'
+        elif "ELDEN RING NIGHTREIGN" in path:
+            game_type = 'Nightreign'
+        elif "ELDEN RING" in path:
+            game_type = 'Elden Ring'
+        return game_type
+
+    @staticmethod
+    def gameTypeDialog():
+        options = ["Dark Souls 1", "Dark Souls 2", "Dark Souls 3", "Sekiro", "Elden Ring", "Nightreign",]
+        choice, ok = QInputDialog.getItem(None, "Select Game Type", "Choose one of the following:", options, 0, False)
+
+        if choice and ok:
+            return choice
+        return None
+
+    @staticmethod
     def createDebugGrid(image, tiles_per_column, tiles_per_row, tile_width, tile_height):
         """Outputs a png with grid lines for debugging"""
         debug = image.copy()
@@ -394,14 +420,6 @@ class MainWindow(QMainWindow):
                     except Exception as e:
                         QMessageBox.critical(self, "Error", f"Failed to load DLL:\n{e}")
 
-    def gameTypeDialog(self):
-        options = ["Dark Souls 1", "Dark Souls 2", "Dark Souls 3", "Sekiro", "Elden Ring", "Nightreign",]
-        choice, ok = QInputDialog.getItem(None, "Select Game Type", "Choose one of the following:", options, 0, False)
-
-        if choice and ok:
-            return choice
-        return None
-
     def openDcxDialog(self, dirmode: bool = False):       
         self.clear() 
         self.checkOodleDLL()
@@ -415,22 +433,9 @@ class MainWindow(QMainWindow):
         
         str_path = str(file_path)
         self.setWindowTitle(f"DSIE - {str_path}")
-        if "DARK SOULS REMASTERED" in str_path:
-            game_type = 'Dark Souls 1'
-        elif "Dark Souls II Scholar of the First Sin" in str_path:
-            game_type = 'Dark Souls 2'
-        elif "DARK SOULS III" in str_path:
-            game_type = 'Dark Souls 3'
-        elif "Sekiro" in str_path:
-            game_type = 'Sekiro'
-        elif "ELDEN RING NIGHTREIGN" in str_path:
-            game_type = 'Nightreign'
-        elif "ELDEN RING" in str_path:
-            game_type = 'Elden Ring'
-        else:
-            game_type = self.gameTypeDialog()
-            if not game_type:
-                return
+        game_type = Functions.parseGameType(path=str_path) or Functions.gameTypeDialog() # show popup dialog if game name not in path
+        if not game_type:
+            return
 
         layout_path = None
         if game_type in ['Sekiro', 'Elden Ring', 'Nightreign']: # HANDLE MODERN GAMES
