@@ -15,7 +15,9 @@ PyQt5
 Pillow  
 
 # Usage
-You can either open a dcx/tpf file or a directory of them (such as your menu folder)  
+Install either [UXM](https://github.com/Nordgaren/UXM-Selective-Unpack) or [NUXE](https://github.com/JKAnderson/Nuxe), then run it and unpack the Menu folder — or the whole game if you want.
+
+After launching DSIE, you can either open a dcx/tpf file or a directory of them (such as your menu folder) from the File menu.
 The leftmost scrollarea are your atlases, the middle is for subtextures, and the right is the preview.  
 Modern games (Sekiro and newer) use a layout system to define where subtextures start and end in the atlas.  
 This means that they can be automatically cropped to the correct size when loading.  
