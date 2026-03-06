@@ -11,7 +11,7 @@ A simple GUI application for previewing and exporting FromSoftware games' icons.
 # Prerequisites (pip install):
 rich  
 constrata  
-PyQt5  
+PySide6  
 Pillow  
 
 # Usage

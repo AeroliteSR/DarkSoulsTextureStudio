@@ -3,12 +3,10 @@ import numpy as np
 from io import BytesIO
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout,
-    QListWidget, QLabel, QHBoxLayout, QFileDialog,
-    QPushButton, QMessageBox, QSplitter, QAction, QProgressDialog, QInputDialog)
-from PyQt5.QtGui import QPixmap, QImage, QIcon, QDesktopServices
-from PyQt5.QtCore import Qt, QObject, pyqtSignal, QThread, QUrl
+from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QListWidget,
+QLabel, QHBoxLayout, QFileDialog, QPushButton, QMessageBox, QSplitter, QProgressDialog, QInputDialog)
+from PySide6.QtGui import QPixmap, QImage, QIcon, QDesktopServices, QAction
+from PySide6.QtCore import Qt, QObject, QThread, QUrl, Signal
 from PIL import Image, ImageDraw
 from soulstruct.containers import tpf
 from soulstruct.dcx import core, oodle
@@ -106,8 +104,8 @@ class Functions():
         return atlases, subtextures
 
 class LoadWorker(QObject):
-    progress = pyqtSignal(int, str)   # percent, message
-    finished = pyqtSignal(dict, dict)  # atlases, subtextures
+    progress = Signal(int, str)   # percent, message
+    finished = Signal(dict, dict)  # atlases, subtextures
 
     def __init__(self, dcx_path, layout_path, game_type):
         super().__init__()
@@ -245,8 +243,8 @@ class LoadWorker(QObject):
             self.finished.emit({}, {})
 
 class ExtractWorker(QObject):
-    progress = pyqtSignal(int, str) # percent, message
-    finished = pyqtSignal(bool) # success
+    progress = Signal(int, str) # percent, message
+    finished = Signal(bool) # success
 
     def __init__(self, atlases, subtextures, output_dir, loader, tasks=None, mode='S'):
         super().__init__()
@@ -549,7 +547,7 @@ class MainWindow(QMainWindow):
         self.progress_dialog.setValue(percent)
         self.progress_dialog.setLabelText(message)
 
-    def extractionDone(self, success):
+    def extractionDone(self, success=True):
         self.progress_dialog.close()
         if success:
             msg = QMessageBox(self)
@@ -560,7 +558,7 @@ class MainWindow(QMainWindow):
             msg.addButton(_open, QMessageBox.ActionRole)
             msg.addButton(QMessageBox.Ok)
             _open.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.project_dir / "Output"))))
-            msg.exec_()
+            msg.exec()
         else:
             QMessageBox.critical(self, "Error", f"Failed to find subtextures")
 
@@ -677,10 +675,10 @@ def main():
     app.setWindowIcon(QIcon(str(base_path / "icon.ico")))
     window = MainWindow(project_dir=base_path)
     window.show()
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
 
 if __name__ == "__main__":
     main()
 
-# nuitka --standalone --onefile --windows-console-mode=disable --enable-plugin=pyqt5 --windows-icon-from-ico=icon.ico --include-data-file=icon.ico=icon.ico --msvc=latest --lto=yes DSIE.py
+# nuitka --standalone --onefile --windows-console-mode=disable --enable-plugin=pyside6 --windows-icon-from-ico=icon.ico --include-data-file=icon.ico=icon.ico --msvc=latest --lto=yes DSIE.py
 # pyinstaller DSIE.py --noconsole --icon=icon.ico --add-data "icon.ico;." --collect-data soulstruct
