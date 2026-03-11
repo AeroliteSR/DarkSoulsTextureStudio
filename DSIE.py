@@ -178,12 +178,13 @@ class LoadWorker(QObject):
 
                     self.progress.emit(20 + int(i / total * 80), f"Loaded {filename}")
 
-                self.finished.emit(atlases, subtextures)
-            
-            else: # single, non 01_common file
-                for i, (name, texture) in enumerate(textures_dict.items(), 1):
+            # add any textures that were not included in the layout
+            for name, texture in textures_dict.items():
+                if name not in atlases:
                     atlases[name] = texture
-                self.finished.emit(atlases, {})
+                    subtextures[name] = {}  # no layout info since single textures go to atlases
+
+            self.finished.emit(atlases, subtextures)
 
         except Exception as e:
             print(e)
@@ -310,7 +311,7 @@ class ExtractWorker(QObject):
         self.finished.emit(True)
 
 class SearchWindow(QWidget):
-    results = Signal(str, Qt.MatchFlag)
+    results = Signal(str, bool) # text, atlas search mode
 
     def __init__(self):
         super().__init__()
@@ -320,12 +321,10 @@ class SearchWindow(QWidget):
         layout.addWidget(QLabel("Search text:"))
         self.search_input = QLineEdit()
 
-        self.exact_cb = QCheckBox("Exact match")
-        self.case_cb = QCheckBox("Case sensitive")
+        self.atlas_search = QCheckBox("Search Atlases")
 
         flags_layout = QVBoxLayout()
-        flags_layout.addWidget(self.exact_cb)
-        flags_layout.addWidget(self.case_cb)
+        flags_layout.addWidget(self.atlas_search)
 
         self.search_button = QPushButton("Search")
         layout.addWidget(self.search_input)
@@ -336,16 +335,8 @@ class SearchWindow(QWidget):
         self.search_button.clicked.connect(self.emit_search)
 
     def emit_search(self):
-        if self.exact_cb.isChecked():
-            flags = Qt.MatchExactly
-        else:
-            flags = Qt.MatchContains
-
-        if self.case_cb.isChecked():
-            flags |= Qt.MatchCaseSensitive
-
         text = self.search_input.text()
-        self.results.emit(text, flags)
+        self.results.emit(text, self.atlas_search.isChecked())
 
 class MainWindow(QMainWindow):
     def __init__(self, project_dir):
@@ -402,6 +393,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(container)
 
     def createMenu(self):
+        """Handles the creation of the menu bar and its features."""
         menu = self.menuBar()
         def createAction(name, func):
             action = QAction(name, self)
@@ -430,6 +422,7 @@ class MainWindow(QMainWindow):
         self.help_menu.addAction(createAction("About", self.showAbout))
 
     def showError(self, text):
+        """Error popup with specified text"""
         msg = QMessageBox()
         msg.setIcon(QMessageBox.Critical)
         msg.setWindowTitle("Error") 
@@ -437,6 +430,7 @@ class MainWindow(QMainWindow):
         msg.exec() 
 
     def clear(self):
+        """Completely reset the window."""
         self.setWindowTitle("DSIE")
         self.atlas_list.clear()
         self.subtexture_list.clear()
@@ -449,6 +443,7 @@ class MainWindow(QMainWindow):
         self.info_label.setText("Image info will appear here")
 
     def checkOodleDLL(self):
+        """Find the oodle dll, or prompt for its location"""
         target = self.project_dir / "oo2core_6_win64.dll"
 
         try:
@@ -476,7 +471,8 @@ class MainWindow(QMainWindow):
                     except Exception as e:
                         QMessageBox.critical(self, "Error", f"Failed to load DLL:\n{e}")
 
-    def openDcxDialog(self, dirmode: bool = False):       
+    def openDcxDialog(self, dirmode: bool = False):
+        """Handles everything to do with loading files. If dirmode = True, loads every dcx/tpf in a directory."""       
         self.clear() 
         self.checkOodleDLL()
         if not dirmode:
@@ -562,6 +558,7 @@ class MainWindow(QMainWindow):
         self.thread.start()
 
     def loadDone(self, atlases, subtextures):
+        """Stuff to do on successful load of files."""
         self.progress_dialog.close()
 
         if not atlases:
@@ -607,10 +604,12 @@ class MainWindow(QMainWindow):
         thread.start()
 
     def updateProgress(self, percent, message):
+        """Updates the loading dialog values."""
         self.progress_dialog.setValue(percent)
         self.progress_dialog.setLabelText(message)
 
     def extractionDone(self, success=True):
+        """Stuff to do after extraction finishes"""
         self.progress_dialog.close()
         if success:
             msg = QMessageBox(self)
@@ -626,46 +625,65 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Error", f"Failed to find subtextures")
 
     def showAbout(self):
+        """Show about popup."""
         QMessageBox.information(self, "About", "Made by <a href='https://linktr.ee/aerolitesr'>Aero</a> :><br><br>")
 
     def toggleCustomNames(self):
+        """Replaces displaying text for QListWidgetItems with the mapped ones whilst retaining the original in UserRole"""
+
+        def restoreNames(widget: QListWidget):
+            for idx in range(widget.count()):
+                item = widget.item(idx)
+                item.setText(item.data(Qt.UserRole))
+
         self.useCustomNames = self.toggle_action.isChecked()
         
         if self.useCustomNames:
             for idx in range(self.atlas_list.count()):
                 item = self.atlas_list.item(idx)
-                name = Maps.AtlasNames[self.game].get(item.text(), None) or item.text()
+                text = item.text()
+                if self.game == 'Dark Souls 2': # special handling due to weird naming system
+                    text = text[text.rfind('_')+1:]
+
+                name = Maps.AtlasNames[self.game].get(text, None) or item.text()
                 item.setText(name)
             
             for idx in range(self.subtexture_list.count()):
                 item = self.subtexture_list.item(idx)
-                _, *pieces = item.text().split('_')
-                id = pieces[-1]
-                _type = pieces[0]
-                name = Maps.TextureNames[self.game].get(_type, {}).get(id.lstrip('0'), None) or item.text()
+                text = item.text()
+
+                _, *pieces = text.split('_')
+                try:
+                    id = pieces[-1]
+                    _type = pieces[0]
+                    name = Maps.TextureNames[self.game].get(_type, {}).get(id.lstrip('0'), None) or text
+                except IndexError:
+                    name = text
+
                 item.setText(name)
 
         else:
-            for idx in range(self.atlas_list.count()):
-                item = self.atlas_list.item(idx)
-                item.setText(item.data(Qt.UserRole))
-
-            for idx in range(self.subtexture_list.count()):
-                item = self.subtexture_list.item(idx)
-                item.setText(item.data(Qt.UserRole))
+            restoreNames(self.atlas_list)
+            restoreNames(self.subtexture_list)
 
     def openSearchWindow(self):
-        def handle_search(text, flags):
-            if not self.subtexture_list.count() > 0:
-                self.showError('No Textures are loaded.')
-                pass
+        """Creates a SearchWindow instance and then handles the returned settings and string."""
+        def handle_search(text, atlasMode):
+            if atlasMode:
+                widget = self.atlas_list
+            else:
+                widget = self.subtexture_list
 
-            results = self.subtexture_list.findItems(text, flags)
+            if not widget.count() > 0:
+                self.showError('No Textures are loaded.')
+                return
+
+            results = widget.findItems(text, Qt.MatchContains)
             if results:
                 item = results[0]
                 item.setSelected(True)
-                self.subtexture_list.setCurrentItem(item)
-                self.subtexture_list.scrollToItem(item)
+                widget.setCurrentItem(item)
+                widget.scrollToItem(item)
             else:
                 self.showError('No results found!')
 
@@ -682,11 +700,13 @@ class MainWindow(QMainWindow):
         return pixmap.scaled(max_size[0], max_size[1], Qt.KeepAspectRatio, Qt.SmoothTransformation)
     
     def getPngSize(self, pil_img):
+        """Simulate a png export to get file size."""
         buf = io.BytesIO()
         pil_img.save(buf, format="PNG")
         return len(buf.getvalue())
 
     def formatImageInfo(self, name, pil_img, img_type="Atlas"):
+        """Properly format information about the selected preview to display."""
         width, height = pil_img.size
         size_uc = len(pil_img.tobytes()) / 1024
         size_c = self.getPngSize(pil_img) / 1024
@@ -710,6 +730,7 @@ class MainWindow(QMainWindow):
         return img
 
     def showAtlas(self, current):
+        """Display the selected atlas, and load all subtextures to the list."""
         if not current:
             return
         atlas_name = current.data(Qt.UserRole)
@@ -724,7 +745,7 @@ class MainWindow(QMainWindow):
         self.preview_label.setPixmap(pixmap)
 
         self.info_label.setText(self.formatImageInfo(atlas_name, atlas_img, "Atlas"))
-
+        # Load subtextures
         for key in self.subtextures.get(atlas_name, {}).keys():
             item = QListWidgetItem(key)
             item.setData(Qt.UserRole, key)
@@ -732,6 +753,7 @@ class MainWindow(QMainWindow):
         self.toggleCustomNames() # just to update it
 
     def showSubtexture(self, current):
+        """Display a preview of the selected subtexture."""
         if not current or not self.current_atlas:
             return
         name = current.data(Qt.UserRole)
