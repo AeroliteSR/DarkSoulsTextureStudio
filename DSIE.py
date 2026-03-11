@@ -1,16 +1,17 @@
+from __future__ import annotations
 import sys, os, io, shutil
 import numpy as np
 from io import BytesIO
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QListWidget,
-QLabel, QHBoxLayout, QFileDialog, QPushButton, QMessageBox, QSplitter, QProgressDialog, QInputDialog)
+from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QListWidget, QListWidgetItem, QCheckBox,
+QLabel, QHBoxLayout, QFileDialog, QPushButton, QMessageBox, QSplitter, QProgressDialog, QInputDialog, QLineEdit)
 from PySide6.QtGui import QPixmap, QImage, QIcon, QDesktopServices, QAction
 from PySide6.QtCore import Qt, QObject, QThread, QUrl, Signal
 from PIL import Image, ImageDraw
 from soulstruct.containers import tpf
 from soulstruct.dcx import core, oodle
-from GameInfo import SubTextureMap
+from GameInfo import Maps
 
 class Functions():
     @staticmethod
@@ -165,16 +166,15 @@ class LoadWorker(QObject):
                         continue
 
                     atlases[filename] = textures_dict[filename]  # store raw texture
-                    subtextures[filename] = []
+                    subtextures[filename] = {}
 
                     for sub in texture_atlas.findall("SubTexture"):
-                        subtextures[filename].append({
-                            "name": sub.get("name"),
+                        subtextures[filename][sub.get("name").replace('.png', '')] = {
                             "x": int(sub.get("x")),
                             "y": int(sub.get("y")),
                             "width": int(sub.get("width")),
                             "height": int(sub.get("height")),
-                        })
+                        }
 
                     self.progress.emit(20 + int(i / total * 80), f"Loaded {filename}")
 
@@ -198,11 +198,11 @@ class LoadWorker(QObject):
 
             for i, (name, texture) in enumerate(textures_dict.items(), 1):
                 atlases[name] = texture
-                subtextures[name] = []
+                subtextures[name] = {}
                 dds = texture.get_dds()
                 image = Image.open(BytesIO(dds.to_bytes())).convert("RGBA")
 
-                texmap = SubTextureMap.TexMap[self.game]
+                texmap = Maps.TextureDimensions[self.game]
                 dimensions = texmap.get(name, None)
                 if dimensions:
                     tile_width, tile_height = dimensions['width'], dimensions['height']
@@ -226,12 +226,11 @@ class LoadWorker(QObject):
                         if opacity_ratio < 0.01:
                             continue # skip saving subtexture if it's blank
 
-                        subtextures[name].append({
-                            "name": f"{name}_{idx}",
+                        subtextures[name][str(idx)] = {
                             "x": x,
                             "y": y,
                             "width": tile_width,
-                            "height": tile_height})
+                            "height": tile_height}
 
                     self.progress.emit(10 + int(i / len(textures_dict) * 90), f"Processed {name}")
 
@@ -310,10 +309,49 @@ class ExtractWorker(QObject):
 
         self.finished.emit(True)
 
+class SearchWindow(QWidget):
+    results = Signal(str, Qt.MatchFlag)
+
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Search")
+        layout = QVBoxLayout()
+
+        layout.addWidget(QLabel("Search text:"))
+        self.search_input = QLineEdit()
+
+        self.exact_cb = QCheckBox("Exact match")
+        self.case_cb = QCheckBox("Case sensitive")
+
+        flags_layout = QVBoxLayout()
+        flags_layout.addWidget(self.exact_cb)
+        flags_layout.addWidget(self.case_cb)
+
+        self.search_button = QPushButton("Search")
+        layout.addWidget(self.search_input)
+        layout.addLayout(flags_layout)
+        layout.addWidget(self.search_button)
+
+        self.setLayout(layout)
+        self.search_button.clicked.connect(self.emit_search)
+
+    def emit_search(self):
+        if self.exact_cb.isChecked():
+            flags = Qt.MatchExactly
+        else:
+            flags = Qt.MatchContains
+
+        if self.case_cb.isChecked():
+            flags |= Qt.MatchCaseSensitive
+
+        text = self.search_input.text()
+        self.results.emit(text, flags)
+
 class MainWindow(QMainWindow):
     def __init__(self, project_dir):
         super().__init__()
         self.project_dir = project_dir
+        self.useCustomNames: bool = False
 
         self.setWindowTitle("DSIE")
         self.setGeometry(100, 100, 1100, 700)
@@ -328,11 +366,11 @@ class MainWindow(QMainWindow):
         splitter = QSplitter(Qt.Horizontal)
 
         self.atlas_list = QListWidget()
-        self.atlas_list.currentItemChanged.connect(self.showAtlas)
+        self.atlas_list.itemClicked.connect(self.showAtlas)
         splitter.addWidget(self.atlas_list)
 
         self.subtexture_list = QListWidget()
-        self.subtexture_list.currentItemChanged.connect(self.showSubtexture)
+        self.subtexture_list.itemClicked.connect(self.showSubtexture)
         splitter.addWidget(self.subtexture_list)
 
         right_panel = QWidget()
@@ -364,29 +402,49 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(container)
 
     def createMenu(self):
-        menubar = self.menuBar()
-
+        menu = self.menuBar()
         def createAction(name, func):
             action = QAction(name, self)
             action.triggered.connect(func)
             return action
 
-        file_menu = menubar.addMenu("File")
-        file_menu.addAction(createAction("Open File", lambda: self.openDcxDialog(dirmode=False)))
-        file_menu.addAction(createAction("Open Directory", lambda: self.openDcxDialog(dirmode=True)))
-        file_menu.addAction(createAction("Clear", self.clear))
-        file_menu.addAction(createAction("Dump All Atlases", lambda: self.dumpTextures(mode='A')))
-        file_menu.addAction(createAction("Dump All Subtextures", lambda: self.dumpTextures(mode='S')))
-        file_menu.addSeparator()
-        file_menu.addAction(createAction("Exit", self.close))
+        self.file_menu = menu.addMenu("File")
+        self.file_menu.addAction(createAction("Open File", lambda: self.openDcxDialog(dirmode=False)))
+        self.file_menu.addAction(createAction("Open Directory", lambda: self.openDcxDialog(dirmode=True)))
+        self.file_menu.addAction(createAction("Clear", self.clear))
+        self.file_menu.addAction(createAction("Dump All Atlases", lambda: self.dumpTextures(mode='A')))
+        self.file_menu.addAction(createAction("Dump All Subtextures", lambda: self.dumpTextures(mode='S')))
+        self.file_menu.addSeparator()
+        self.file_menu.addAction(createAction("Exit", self.close))
 
-        help_menu = menubar.addMenu("Help")
-        help_menu.addAction(createAction("About", self.showAbout))
+        self.settings_menu = menu.addMenu("Settings")
+        self.toggle_action = QAction("Use Names", self)
+        self.toggle_action.setCheckable(True)
+        self.toggle_action.setChecked(self.useCustomNames)
+        self.toggle_action.toggled.connect(self.toggleCustomNames)
+        self.settings_menu.addAction(self.toggle_action)
+
+        self.searchButton = menu.addAction(createAction("Search", self.openSearchWindow))
+
+        self.help_menu = menu.addMenu("Help")
+        self.help_menu.addAction(createAction("About", self.showAbout))
+
+    def showError(self, text):
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Critical)
+        msg.setWindowTitle("Error") 
+        msg.setText(text) 
+        msg.exec() 
 
     def clear(self):
         self.setWindowTitle("DSIE")
         self.atlas_list.clear()
         self.subtexture_list.clear()
+        self.subtextures = {}
+        self.atlases = {}
+        self.current_crop = None
+        self.current_atlas = None
+        self.thumbnail_cache = {}
         self.preview_label.setText("Select an atlas or subtexture")
         self.info_label.setText("Image info will appear here")
 
@@ -431,13 +489,13 @@ class MainWindow(QMainWindow):
         
         str_path = str(file_path)
         self.setWindowTitle(f"DSIE - {str_path}")
-        game_type = Functions.parseGameType(path=str_path) or Functions.gameTypeDialog() # show popup dialog if game name not in path
-        if not game_type:
+        self.game = Functions.parseGameType(path=str_path) or Functions.gameTypeDialog() # show popup dialog if game name not in path
+        if not self.game:
             return
 
         layout_path = None
-        if game_type in ['Sekiro', 'Elden Ring', 'Nightreign']: # HANDLE MODERN GAMES
-            if game_type != 'Nightreign':
+        if self.game in ['Sekiro', 'Elden Ring', 'Nightreign']: # HANDLE MODERN GAMES
+            if self.game != 'Nightreign':
                 if file_path.is_dir():
                     if '01_common.tpf.dcx' in os.listdir(file_path):
                         try_layout = file_path / '01_common.sblytbnd.dcx'
@@ -491,7 +549,7 @@ class MainWindow(QMainWindow):
         self.progress_dialog.show()
 
         self.thread = QThread()
-        self.worker = LoadWorker(file_path, layout_path, game_type)#; print(file_path, layout_path, game_type)
+        self.worker = LoadWorker(file_path, layout_path, self.game)#; print(file_path, layout_path, self.game)
         self.worker.moveToThread(self.thread)
 
         self.worker.progress.connect(self.updateProgress)
@@ -512,8 +570,13 @@ class MainWindow(QMainWindow):
 
         self.atlases = atlases
         self.subtextures = subtextures
+
         self.atlas_list.clear()
-        self.atlas_list.addItems(sorted(atlases.keys()))
+        for key in atlases.keys():
+            item = QListWidgetItem(key)
+            item.setData(Qt.UserRole, key)
+            self.atlas_list.addItem(item)
+
         self.subtexture_list.clear()
         self.preview_label.setText("Select an atlas or subtexture")
         self.info_label.setText("Image info will appear here")
@@ -565,6 +628,51 @@ class MainWindow(QMainWindow):
     def showAbout(self):
         QMessageBox.information(self, "About", "Made by <a href='https://linktr.ee/aerolitesr'>Aero</a> :><br><br>")
 
+    def toggleCustomNames(self):
+        self.useCustomNames = self.toggle_action.isChecked()
+        
+        if self.useCustomNames:
+            for idx in range(self.atlas_list.count()):
+                item = self.atlas_list.item(idx)
+                name = Maps.AtlasNames[self.game].get(item.text(), None) or item.text()
+                item.setText(name)
+            
+            for idx in range(self.subtexture_list.count()):
+                item = self.subtexture_list.item(idx)
+                _, *pieces = item.text().split('_')
+                id = pieces[-1]
+                _type = pieces[0]
+                name = Maps.TextureNames[self.game].get(_type, {}).get(id.lstrip('0'), None) or item.text()
+                item.setText(name)
+
+        else:
+            for idx in range(self.atlas_list.count()):
+                item = self.atlas_list.item(idx)
+                item.setText(item.data(Qt.UserRole))
+
+            for idx in range(self.subtexture_list.count()):
+                item = self.subtexture_list.item(idx)
+                item.setText(item.data(Qt.UserRole))
+
+    def openSearchWindow(self):
+        def handle_search(text, flags):
+            if not self.subtexture_list.count() > 0:
+                self.showError('No Textures are loaded.')
+                pass
+
+            results = self.subtexture_list.findItems(text, flags)
+            if results:
+                item = results[0]
+                item.setSelected(True)
+                self.subtexture_list.setCurrentItem(item)
+                self.subtexture_list.scrollToItem(item)
+            else:
+                self.showError('No results found!')
+
+        self.searchInstance = SearchWindow()
+        self.searchInstance.results.connect(handle_search)
+        self.searchInstance.show()
+
     def pil2Qpixmap(self, pil_img, max_size=(600, 400)):
         """Convert PIL Image to QPixmap without destroying the aspect ratio lol"""
         data = pil_img.tobytes("raw", "RGBA")
@@ -604,9 +712,10 @@ class MainWindow(QMainWindow):
     def showAtlas(self, current):
         if not current:
             return
-        atlas_name = current.text()
+        atlas_name = current.data(Qt.UserRole)
         self.current_atlas = atlas_name
         self.current_crop = None
+        self.subtexture_list.clear()
 
         atlas_img = self.getPilImage(atlas_name)
         preview_img = atlas_img.copy()
@@ -616,15 +725,17 @@ class MainWindow(QMainWindow):
 
         self.info_label.setText(self.formatImageInfo(atlas_name, atlas_img, "Atlas"))
 
-        self.subtexture_list.clear()
-        for st in self.subtextures.get(atlas_name, []):
-            self.subtexture_list.addItem(st["name"])
+        for key in self.subtextures.get(atlas_name, {}).keys():
+            item = QListWidgetItem(key)
+            item.setData(Qt.UserRole, key)
+            self.subtexture_list.addItem(item)
+        self.toggleCustomNames() # just to update it
 
     def showSubtexture(self, current):
         if not current or not self.current_atlas:
             return
-        name = current.text()
-        st = next(s for s in self.subtextures[self.current_atlas] if s["name"] == name)
+        name = current.data(Qt.UserRole)
+        st = self.subtextures[self.current_atlas][name]
 
         atlas_img = self.getPilImage(self.current_atlas)
         cropped = atlas_img.crop((st["x"], st["y"], st["x"] + st["width"], st["y"] + st["height"]))
