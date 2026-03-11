@@ -26,7 +26,14 @@ This means that they can be automatically cropped to the correct size when loadi
 Older games (DSR and DS3) instead just use a numbered grid system. I have already mapped some of the more uniform atlases in `GameInfo.py`
 which will be split correctly into subtextures.  
 Dark Souls 2 doesn't use atlases and just keeps a folder of thousands of images, making it hard to organize.  
+  
+Currently the `Settings` tab has only one option, `Use Names`. This setting replaces the internal names with mapped ones in `GameInfo.py`. 
+This setting can be especially useful for if you don't know the ID of an item in a big list, allowing you to search by its display name.  
+Some data, such as Nightreign garbs and Sekiro bosses, were mapped manually, but most of it was scripted from Smithbox exports.  
 
+You can press the `Search` button on the menu bar to open a prompt for a string. It defaults to Qt.MatchContains within the subtextures list.
+If you want it to search through atlases (for example, for DS2), check `Search Atlases`  
+  
 Note: The high resolution versions of Elden Ring and Nightreigns's icons are stored in 00_solo(_h/l).tpfbdt which you can unpack with WitchyBND.  
 Be aware that opening this directory in DSIE will use a LOT of resources (~3.4GB of RAM for ER and ~1.3GB for NR) and will increase by ~4mb for each icon you load.
 
