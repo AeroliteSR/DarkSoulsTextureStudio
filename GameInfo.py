@@ -1,5 +1,4 @@
 class Maps():
-    """Width and height for each subtexture in an atlas grid"""
     TextureDimensions = {
             "Dark Souls 1": 
             {'Icon00': {'width': 164, 'height': 184},
@@ -165,6 +164,7 @@ class Maps():
              'SB_Tutorial': 'Mikiri Tutorial + Boxes',
              'SB_Tutorial_02': 'Gameplay Tutorials',
             },
+            
             "Elden Ring":
             {
                 
