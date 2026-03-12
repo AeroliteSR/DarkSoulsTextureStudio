@@ -513,6 +513,9 @@ class MainWindow(QMainWindow):
 
         file_mappings = []
         if self.game == 'Nightreign':
+            if not dirmode:
+                files += [f for f in file_path.parent.glob("*.sblytbnd.dcx")]
+                
             groups = defaultdict(lambda: {"h": {}, "l": {}})
             standalone = []
 
