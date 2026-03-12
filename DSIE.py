@@ -515,7 +515,7 @@ class MainWindow(QMainWindow):
         if self.game == 'Nightreign':
             if not dirmode:
                 files += [f for f in file_path.parent.glob("*.sblytbnd.dcx")]
-                
+
             groups = defaultdict(lambda: {"h": {}, "l": {}})
             standalone = []
 
@@ -850,10 +850,16 @@ class MainWindow(QMainWindow):
         """Export all atlases or subtextures. Subtextures go into directories for their atlases"""
         self.runExtraction(mode=mode)
 
+def getIcon(base_path):
+    if getattr(sys, 'frozen', False):
+        return QIcon(str(Path(sys.executable).parent / 'icon.ico'))
+    else:
+        return QIcon(str(base_path / 'icon.ico'))
+
 def main():
     app = QApplication(sys.argv)
     base_path = Path(sys.argv[0]).parent
-    app.setWindowIcon(QIcon(str(base_path / "icon.ico")))
+    app.setWindowIcon(getIcon(base_path))
     window = MainWindow(project_dir=base_path)
     window.show()
     sys.exit(app.exec())
