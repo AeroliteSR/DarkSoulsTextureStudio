@@ -541,10 +541,10 @@ class MainWindow(QMainWindow):
 
             for prefix, data in groups.items():
                 available = []
-                if "tpf" in data["h"] and "layout" in data["h"]:
-                    available.append("h")
-                if "tpf" in data["l"] and "layout" in data["l"]:
-                    available.append("l")
+
+                for res in ["h", "l"]:
+                    if "tpf" in data[res]:
+                        available.append(res)
 
                 if not available:
                     continue
@@ -556,10 +556,22 @@ class MainWindow(QMainWindow):
                 else:
                     choice = available[0]
 
-                tpf = data[choice]["tpf"]
-                layout = data[choice]["layout"]
+                tpf = data[choice].get("tpf")
+                layout = data[choice].get("layout")
 
-                file_mappings.append({"file": tpf, "layout": layout})
+                if tpf and not layout:
+                    layout_path = QFileDialog.getOpenFileName(self, f"Select layout for {tpf.name}", str(tpf.parent), "Layout Files (*.sblytbnd.dcx)")[0]
+
+                    if layout_path:
+                        layout = Path(layout_path)
+                    else:
+                        self.showError("Layout file doesn't exist!")
+                        return
+
+                if layout:
+                    file_mappings.append({"file": tpf, "layout": layout})
+                else:
+                    file_mappings.append(tpf)
 
             file_mappings.extend(standalone) # no layout
 
@@ -578,6 +590,10 @@ class MainWindow(QMainWindow):
                         layout = try_lyt
                     else:
                         layout = Path(QFileDialog.getOpenFileName(None, "Navigate to corresponding sblytbnd.dcx", "", "Layout Files (*.sblytbnd.dcx)")[0])
+
+                        if not layout.exists():
+                            self.showError("Layout file doesn't exist!")
+                            return
 
                 if layout:
                     file_mappings.append({"file": f, "layout": layout})
