@@ -15,6 +15,7 @@ oo2core_6_win64.dll
 Output/
 tempCodeRunnerFile.py
 Fetch Data.py
+*.cmd
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
