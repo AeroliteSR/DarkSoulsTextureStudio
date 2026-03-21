@@ -5,7 +5,7 @@ from io import BytesIO
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QListWidget, QListWidgetItem, QCheckBox,
-QLabel, QHBoxLayout, QFileDialog, QPushButton, QMessageBox, QSplitter, QProgressDialog, QInputDialog, QLineEdit)
+QLabel, QHBoxLayout, QFileDialog, QPushButton, QMessageBox, QSplitter, QProgressDialog, QInputDialog, QLineEdit, QMenu)
 from PySide6.QtGui import QPixmap, QImage, QIcon, QDesktopServices, QAction
 from PySide6.QtCore import Qt, QObject, QThread, QUrl, Signal
 from PIL import Image, ImageDraw
@@ -13,6 +13,12 @@ from soulstruct.containers import tpf
 from soulstruct.dcx import core, oodle
 from GameInfo import Maps
 from collections import defaultdict
+import tempfile
+from enum import Enum, auto
+
+class ExportMode(Enum):
+    ATLAS = auto()
+    SUBTEXTURE = auto()
 
 class Functions():
     @staticmethod
@@ -114,12 +120,13 @@ class Functions():
 
 class LoadWorker(QObject):
     progress = Signal(int, str)   # percent, message
-    finished = Signal(dict, dict)  # atlases, subtextures
+    finished = Signal(dict, dict, dict)  # atlases, subtextures, loaded dcx files
 
     def __init__(self, file_mappings, game_type):
         super().__init__()
         self.file_mappings = file_mappings
         self.game = game_type
+        self.LOADED_DCX_FILES = {}
 
     def run(self):
         if self.game in ['Dark Souls 1', 'Dark Souls 2', 'Dark Souls 3',]:
@@ -130,15 +137,16 @@ class LoadWorker(QObject):
     def generateTextDict(self, dcx_path, percent):
         textures_dict: dict = {}
         self.progress.emit(percent, f"Unpacking {dcx_path.stem}...")
+
+        paths = []
         if dcx_path.is_dir():
-            for file in os.listdir(dcx_path):
-                if file.endswith('tpf.dcx') or file.endswith('.tpf'):
-                    path = Path(dcx_path) / file
-                    tpfdcx = tpf.TPF(path)
-                    for texture in tpfdcx.textures:
-                        textures_dict[texture.stem] = texture
+            paths = [Path(dcx_path) / f for f in os.listdir(dcx_path) if f.endswith('tpf.dcx') or f.endswith('.tpf')]
         else:
-            tpfdcx = tpf.TPF(dcx_path)
+            paths = [Path(dcx_path)]
+
+        for path in paths:
+            tpfdcx = tpf.TPF(path)
+            self.LOADED_DCX_FILES[path.name] = tpfdcx
             for texture in tpfdcx.textures:
                 textures_dict[texture.stem] = texture
 
@@ -167,6 +175,7 @@ class LoadWorker(QObject):
 
                     if total_atlases == 0:
                         self.progress.emit(100, "No atlases found")
+                        self.finished.emit({}, {}, {})
                         return
 
                     for texture_atlas in atlas_nodes:
@@ -177,7 +186,7 @@ class LoadWorker(QObject):
                             self.progress.emit(int(f_idx / total_files * 100), f"{filename} not found, skipping.")
                             continue
 
-                        atlases[filename] = textures_dict[filename]  # store raw texture
+                        atlases[filename] = {"texture": textures_dict[filename], "parent": file['file']}  # store raw texture
                         subtextures[filename] = {}
 
                         for sub in texture_atlas.findall("SubTexture"):
@@ -192,16 +201,16 @@ class LoadWorker(QObject):
                     # add any textures that were not included in the layout
                     for name, texture in textures_dict.items():
                         if name not in atlases:
-                            atlases[name] = texture
+                            atlases[name] = {"texture": texture, "parent": file}
                             subtextures[name] = {}  # no layout info since single textures go to atlases
 
-            self.finished.emit(atlases, subtextures)
+            self.finished.emit(atlases, subtextures, self.LOADED_DCX_FILES)
             self.progress.emit(100, 'Successfully loaded all files!')
 
-        except IndentationError as e:
+        except Exception as e:
             print(e)
             self.progress.emit(0, f"Error: {e}")
-            self.finished.emit({}, {})
+            self.finished.emit({}, {}, {})
 
     def processOld(self):  
         try:
@@ -214,7 +223,7 @@ class LoadWorker(QObject):
                 textures_dict: dict = self.generateTextDict(file, percent)
 
                 for name, texture in textures_dict.items():
-                    atlases[name] = texture
+                    atlases[name] = {"texture": texture, "parent": file}
                     subtextures[name] = {}
                     dds = texture.get_dds()
                     image = Image.open(BytesIO(dds.to_bytes())).convert("RGBA")
@@ -251,18 +260,18 @@ class LoadWorker(QObject):
 
                         self.progress.emit(percent, f"Processed {name}")
 
-            self.finished.emit(atlases, subtextures)
+            self.finished.emit(atlases, subtextures, self.LOADED_DCX_FILES)
 
         except Exception as e:
             print(e)
             self.progress.emit(0, f"Error: {e}")
-            self.finished.emit({}, {})
+            self.finished.emit({}, {}, {})
 
 class ExtractWorker(QObject):
     progress = Signal(int, str) # percent, message
     finished = Signal(bool) # success
 
-    def __init__(self, atlases, subtextures, output_dir, loader, tasks=None, mode='S'):
+    def __init__(self, atlases, subtextures, output_dir, loader, tasks=None, mode=ExportMode.SUBTEXTURE):
         super().__init__()
         self.atlases = atlases
         self.subtextures = subtextures
@@ -286,7 +295,7 @@ class ExtractWorker(QObject):
 
     def run(self):
         if not self.tasks:
-            if self.mode == 'A':
+            if self.mode == ExportMode.ATLAS:
                 if not self.atlases:
                     self.finished.emit(False)
                     return
@@ -294,7 +303,7 @@ class ExtractWorker(QObject):
                 for atlas_name in self.atlases:
                     self.tasks.append((atlas_name, None))
 
-            elif self.mode == 'S':
+            elif self.mode == ExportMode.SUBTEXTURE:
                 if not self.subtextures:
                     self.finished.emit(False)
                     return
@@ -311,15 +320,16 @@ class ExtractWorker(QObject):
             atlas_img = self.pilLoader(atlas_name=atlas_name)
             percent = int(i / total * 100)
 
-            if self.mode == 'A':
+            if self.mode == ExportMode.ATLAS:
                 out_path = self.output_dir / '_Atlases'
                 filename = atlas_name
                 message = f"Exported atlas: {atlas_name}"
 
-            elif self.mode == 'S':
+            elif self.mode == ExportMode.SUBTEXTURE:
                 out_path = self.output_dir / atlas_name
-                filename = st['name']
-                message = f"Exported {st['name']} from {atlas_name}"
+                filename = st
+                message = f"Exported {st} from {atlas_name}"
+                st = self.subtextures[atlas_name][st]
                 atlas_img = atlas_img.crop((st["x"], st["y"], st["x"] + st["width"], st["y"] + st["height"])) # crop if in subtexture mode
 
             self.exportImg(image=atlas_img, filename=filename, out_path=out_path, progress=percent, message=message)
@@ -354,6 +364,62 @@ class SearchWindow(QWidget):
         text = self.search_input.text()
         self.results.emit(text, self.atlas_search.isChecked())
 
+class ReplaceWorker(QObject):
+    finished = Signal(bool, str)  # success, message
+
+    def __init__(self, replacements, subtextures, loaded_files, getPilImage, project_dir):
+        super().__init__()
+        self.replacements = replacements
+        self.subtextures = subtextures
+        self.getPilImage = getPilImage
+        self.project_dir = project_dir
+        self.LOADED_DCX_FILES = loaded_files
+
+    def run(self):
+        try:
+            for dcx_path, atlases in self.replacements.items():
+                base = self.LOADED_DCX_FILES[(dcx_path).name] # reuse to save processing power
+
+                for atlas_name, changes in atlases.items():
+                    atlas_img = self.getPilImage(atlas_name).copy()
+                    for sub_name, new_img in changes.items():
+                        if sub_name:  # subtexture replacement
+                            st = None
+                            if self.subtextures.get(atlas_name):
+                                st = self.subtextures[atlas_name].get(sub_name, None) or self.getGridSubtexture(atlas_name, sub_name, self.getPilImage(atlas_name))
+
+                            if not st:
+                                raise Exception(f"Could not resolve subtexture: {sub_name}")
+                            
+                            resized = new_img.resize((st["width"], st["height"]), Image.Resampling.LANCZOS)
+                            atlas_img.paste(resized, (st["x"], st["y"]))
+                        else:  # full atlas replacement
+                            atlas_img = new_img
+
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
+                        temp_path = tmp.name
+                        atlas_img.save(temp_path)
+                    
+                    try:
+                        texture = tpf.TPF.find_texture_stem(base, atlas_name)
+                        texture.replace_dds(temp_path)
+                    finally:
+                        if os.path.exists(temp_path):
+                            os.remove(temp_path)
+
+                writer = base.to_writer()
+                data = core.compress(bytes(writer), core.DCXType.DCX_KRAK)
+
+                out_dir = self.project_dir / 'Output' / '_Replacements'
+                out_dir.mkdir(parents=True, exist_ok=True)
+                with open(out_dir / Path(dcx_path).name, "wb") as f:
+                    f.write(data)
+
+            self.finished.emit(True, "All replacements applied successfully!")
+
+        except Exception as e:
+            self.finished.emit(False, f"Error: {str(e)}")
+
 class MainWindow(QMainWindow):
     def __init__(self, project_dir):
         super().__init__()
@@ -367,6 +433,7 @@ class MainWindow(QMainWindow):
         self.current_crop = None
         self.current_atlas = None
         self.thumbnail_cache = {}
+        self.pending_replacements = {}
 
         container = QWidget()
         layout = QHBoxLayout(container)
@@ -420,8 +487,10 @@ class MainWindow(QMainWindow):
         self.file_menu.addAction(createAction("Open File", lambda: self.openDcxDialog(dirmode=False)))
         self.file_menu.addAction(createAction("Open Directory", lambda: self.openDcxDialog(dirmode=True)))
         self.file_menu.addAction(createAction("Clear", self.clear))
-        self.file_menu.addAction(createAction("Dump All Atlases", lambda: self.dumpTextures(mode='A')))
-        self.file_menu.addAction(createAction("Dump All Subtextures", lambda: self.dumpTextures(mode='S')))
+        self.file_menu.addAction(createAction("Apply Replacements", self.applyReplacements))
+        self.file_menu.addSeparator()
+        self.file_menu.addAction(createAction("Dump All Atlases", lambda: self.dumpTextures(mode=ExportMode.ATLAS)))
+        self.file_menu.addAction(createAction("Dump All Subtextures", lambda: self.dumpTextures(mode=ExportMode.SUBTEXTURE)))
         self.file_menu.addSeparator()
         self.file_menu.addAction(createAction("Exit", self.close))
 
@@ -433,9 +502,16 @@ class MainWindow(QMainWindow):
         self.settings_menu.addAction(self.toggle_action)
 
         self.searchButton = menu.addAction(createAction("Search", self.openSearchWindow))
+        self.searchButton = menu.addAction(createAction("Replace", self.registerReplacement))
 
         self.help_menu = menu.addMenu("Help")
-        self.help_menu.addAction(createAction("About", self.showAbout))
+        self.help_menu.addAction(createAction("Replace", lambda: QMessageBox.information(self, "Replacement", 
+                                                                                         "Pressing \"Replace\" will prompt you for an image file.<br>" \
+                                                                                         "DSIE will then replace the entire texture with that image if you have" \
+                                                                                         " an atlas currently selected, or an icon if a subtexture is selected." \
+                                                                                         "<br><br>After replacing, go to File->Apply Replacements to save.")))
+        self.help_menu.addAction(createAction("About", lambda: QMessageBox.information(self, "About", 
+                                                                                       "Made by <a href='https://linktr.ee/aerolitesr'>Aero</a> :><br><br>")))
 
     def showError(self, text):
         """Error popup with specified text"""
@@ -620,7 +696,7 @@ class MainWindow(QMainWindow):
         self.thread.started.connect(self.worker.run)
         self.thread.start()
 
-    def loadDone(self, atlases, subtextures):
+    def loadDone(self, atlases, subtextures, LOADED_DCX_FILES):
         """Stuff to do on successful load of files."""
         self.progress_dialog.close()
 
@@ -630,18 +706,20 @@ class MainWindow(QMainWindow):
 
         self.atlases = atlases
         self.subtextures = subtextures
+        self.LOADED_DCX_FILES = LOADED_DCX_FILES
 
         self.atlas_list.clear()
-        for key in atlases.keys():
-            item = QListWidgetItem(key)
-            item.setData(Qt.UserRole, key)
+        for name, _atlas in atlases.items():
+            item = QListWidgetItem(name)
+            item.setData(Qt.UserRole, name) # original name
+            item.setData(Qt.UserRole+1, _atlas['parent']) # parent file
             self.atlas_list.addItem(item)
 
         self.subtexture_list.clear()
         self.preview_label.setText("Select an atlas or subtexture")
         self.info_label.setText("Image info will appear here")
 
-    def runExtraction(self, tasks=None, mode='S'):
+    def runExtraction(self, tasks=None, mode=ExportMode.SUBTEXTURE):
         output_dir = self.project_dir / "Output"
 
         self.progress_dialog = QProgressDialog("Exporting...", "Cancel", 0, 100, self)
@@ -686,10 +764,6 @@ class MainWindow(QMainWindow):
             msg.exec()
         else:
             QMessageBox.critical(self, "Error", f"Failed to find subtextures")
-
-    def showAbout(self):
-        """Show about popup."""
-        QMessageBox.information(self, "About", "Made by <a href='https://linktr.ee/aerolitesr'>Aero</a> :><br><br>")
 
     def toggleCustomNames(self):
         """Replaces displaying text for QListWidgetItems with the mapped ones whilst retaining the original in UserRole"""
@@ -754,6 +828,119 @@ class MainWindow(QMainWindow):
         self.searchInstance.results.connect(handle_search)
         self.searchInstance.show()
 
+    def getGridSubtexture(self, atlas_name, sub_name, atlas_img):
+        """Returns (x, y, width, height) for atlases that don't use layouts. Aka from older games."""
+        texmap = Maps.TextureDimensions[self.game]
+        dimensions = texmap.get(atlas_name, None)
+
+        if not dimensions:
+            return None  # no mapping available
+
+        tile_w = dimensions['width']
+        tile_h = dimensions['height']
+
+        atlas_w, atlas_h = atlas_img.size
+        tiles_per_row = atlas_w // tile_w
+
+        try:
+            idx = int(sub_name)
+        except:
+            return None
+
+        row = idx // tiles_per_row
+        col = idx % tiles_per_row
+
+        x = col * tile_w
+        y = row * tile_h
+
+        return {"x": x, "y": y, "width": tile_w, "height": tile_h}
+
+    def queueReplacement(self, dcx_file: Path, atlas_item, sub_item, img_path: Path):
+        atlas_name = atlas_item.data(Qt.UserRole)
+        sub_name = sub_item.data(Qt.UserRole) if sub_item else None
+
+        atlas_img = self.getPilImage(atlas_name).copy()
+        new_img = Image.open(img_path).convert("RGBA")
+
+        if sub_name: # subtexture replacement
+            st = None
+            st = self.subtextures[atlas_name].get(sub_name, None) or self.getGridSubtexture(atlas_name, sub_name, atlas_img) # fallback to grid for older games
+
+            if not st:
+                self.showError(f"Could not resolve subtexture: {sub_name}")
+                return
+
+            new_img = new_img.resize((st["width"], st["height"]), Image.Resampling.LANCZOS)
+            atlas_img.paste(new_img, (st["x"], st["y"]))
+        else: # full atlas replacement
+            atlas_img = new_img
+
+        self.thumbnail_cache[atlas_name] = atlas_img
+
+        if dcx_file not in self.pending_replacements:
+            self.pending_replacements[dcx_file] = {}
+        if atlas_name not in self.pending_replacements[dcx_file]:
+            self.pending_replacements[dcx_file][atlas_name] = {}
+
+        self.pending_replacements[dcx_file][atlas_name][sub_name] = new_img
+
+        atlas_item.setForeground(Qt.yellow)
+        if sub_item:
+            sub_item.setForeground(Qt.yellow)
+
+        preview_img = atlas_img.copy()
+        preview_img.thumbnail((600, 400), Image.Resampling.LANCZOS)
+        self.preview_label.setPixmap(self.pil2Qpixmap(preview_img))
+
+    def registerReplacement(self):
+        """Prompt the user for an image, then add it to the replacement queue with the currently selected texture as the target."""
+        atlas = self.atlas_list.currentItem()
+        sub = self.subtexture_list.currentItem()
+        dcx_file = atlas.data(Qt.UserRole+1)
+
+        if not atlas:
+            self.showError('No atlas loaded!')
+            return
+
+        img_path = Path(QFileDialog.getOpenFileName(self, "Select Image", "", "")[0])
+        if not img_path or img_path == Path('.'):
+            return
+        
+        self.queueReplacement(Path(dcx_file), atlas, sub, Path(img_path))
+
+    def applyReplacements(self):
+        if not self.pending_replacements:
+            QMessageBox.information(self, "Info", "No replacements queued.")
+            return
+        
+        self.replace_dialog = QProgressDialog("Applying replacements...", None, 0, 0, self)
+        self.replace_dialog.setWindowTitle("Processing")
+        self.replace_dialog.setWindowModality(Qt.ApplicationModal)
+        self.replace_dialog.setCancelButton(None)
+        self.replace_dialog.setMinimumDuration(0)
+        self.replace_dialog.setMinimumWidth(200)
+        self.replace_dialog.show()
+
+        self.r_thread = QThread()
+        self.r_worker = ReplaceWorker(self.pending_replacements, self.subtextures, self.LOADED_DCX_FILES, self.getPilImage, self.project_dir)
+        self.r_worker.moveToThread(self.r_thread)
+        self.r_thread.started.connect(self.r_worker.run)
+
+        self.r_worker.finished.connect(self.r_thread.quit)
+        self.r_worker.finished.connect(self.replaceDone)
+        self.r_worker.finished.connect(self.r_worker.deleteLater)
+        self.r_thread.finished.connect(self.r_thread.deleteLater)
+        
+        self.r_thread.start()
+
+    def replaceDone(self, success: bool, msg: str):
+        self.replace_dialog.close()
+        if success:
+            self.extractionDone(True)
+            self.pending_replacements.clear()
+        else:
+            self.showError(msg)
+
     def pil2Qpixmap(self, pil_img, max_size=(600, 400)):
         """Convert PIL Image to QPixmap without destroying the aspect ratio lol"""
         data = pil_img.tobytes("raw", "RGBA")
@@ -783,10 +970,13 @@ class MainWindow(QMainWindow):
 
     def getPilImage(self, atlas_name):
         """Load PIL image from TPF texture on-demand."""
+        if len(self.thumbnail_cache) > 50:
+            self.thumbnail_cache.pop(next(iter(self.thumbnail_cache)))
+
         if atlas_name in self.thumbnail_cache:
             return self.thumbnail_cache[atlas_name]
 
-        texture = self.atlases[atlas_name]
+        texture = self.atlases[atlas_name]['texture']
         with io.BytesIO(texture.data) as dds_buffer:
             img = Image.open(dds_buffer).convert("RGBA")
         self.thumbnail_cache[atlas_name] = img
@@ -840,8 +1030,8 @@ class MainWindow(QMainWindow):
             return
 
         if self.current_crop is not None and self.subtexture_list.currentItem(): # Subtexture selected
-            st = next(s for s in self.subtextures[self.current_atlas] if s["name"] == self.subtexture_list.currentItem().text())
-            self.runExtraction(tasks=[(self.current_atlas, st)])
+            key = self.subtexture_list.currentItem().data(Qt.UserRole)
+            self.runExtraction(tasks=[(self.current_atlas, key)])
 
         else: # No subtexture selected, export the full atlas
             out_path = self.project_dir / "Output" /"_Atlases"
@@ -863,7 +1053,7 @@ class MainWindow(QMainWindow):
 
         self.runExtraction(tasks=tasks)
 
-    def dumpTextures(self, mode='S'):
+    def dumpTextures(self, mode=ExportMode.SUBTEXTURE):
         """Export all atlases or subtextures. Subtextures go into directories for their atlases"""
         self.runExtraction(mode=mode)
 

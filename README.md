@@ -34,6 +34,10 @@ Some data, such as Nightreign garbs and Sekiro bosses, were mapped manually, but
 You can press the `Search` button on the menu bar to open a prompt for a string. It defaults to Qt.MatchContains within the subtextures list.
 If you want it to search through atlases (for example, for DS2), check `Search Atlases`  
   
+The `Replace` button selects whichever texture you currently have in the preview, whether that is an atlas or one of its subtextures. It then prompts you 
+for an image file. The image you selected is then patched into the atlas/icon within memory. Going to `File -> Apply Replacements` will then export your 
+changes as a tpf/dcx file, which should work as is. Some testing showed that Witchy seems to find the files to be agreeable.  
+  
 Note: The high resolution versions of Elden Ring and Nightreigns's icons are stored in 00_solo(_h/l).tpfbdt which you can unpack with WitchyBND.  
 Be aware that opening this directory in DSIE will use a LOT of resources (~3.4GB of RAM for ER and ~1.3GB for NR) and will increase by ~4mb for each icon you load.
 
