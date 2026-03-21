@@ -559,14 +559,13 @@ class MainWindow(QMainWindow):
                 tpf = data[choice].get("tpf")
                 layout = data[choice].get("layout")
 
-                if tpf and not layout:
+                if tpf and not layout and ('_common_' in Path(tpf).stem):
                     layout_path = QFileDialog.getOpenFileName(self, f"Select layout for {tpf.name}", str(tpf.parent), "Layout Files (*.sblytbnd.dcx)")[0]
 
                     if layout_path:
                         layout = Path(layout_path)
                     else:
-                        self.showError("Layout file doesn't exist!")
-                        return
+                        self.showError("Layout file doesn't exist. Loading raw atlases instead.")
 
                 if layout:
                     file_mappings.append({"file": tpf, "layout": layout})
