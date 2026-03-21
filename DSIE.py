@@ -807,12 +807,14 @@ class MainWindow(QMainWindow):
         pixmap = self.pil2Qpixmap(preview_img)
         self.preview_label.setPixmap(pixmap)
 
-        self.info_label.setText(self.formatImageInfo(atlas_name, atlas_img, "Atlas"))
         # Load subtextures
         for key in self.subtextures.get(atlas_name, {}).keys():
             item = QListWidgetItem(key)
             item.setData(Qt.UserRole, key)
             self.subtexture_list.addItem(item)
+        
+        img_type = "Atlas" if self.subtexture_list.count() > 0 else "Texture"
+        self.info_label.setText(self.formatImageInfo(atlas_name, atlas_img, img_type))
         self.toggleCustomNames() # just to update it
 
     def showSubtexture(self, current):
