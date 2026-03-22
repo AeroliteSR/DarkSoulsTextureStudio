@@ -14,6 +14,7 @@ from soulstruct.dcx import core, oodle
 from GameInfo import Maps
 from collections import defaultdict
 import tempfile
+import copy
 from enum import Enum, auto
 
 class ExportMode(Enum):
@@ -377,16 +378,21 @@ class ReplaceWorker(QObject):
 
     def run(self):
         try:
+            atlas_cache = {}
             for dcx_path, atlases in self.replacements.items():
-                base = self.LOADED_DCX_FILES[(dcx_path).name] # reuse to save processing power
+                base = copy.deepcopy(self.LOADED_DCX_FILES[(dcx_path).name]) # reuse to save processing power
 
                 for atlas_name, changes in atlases.items():
-                    atlas_img = self.getPilImage(atlas_name).copy()
+                    if atlas_name not in atlas_cache:
+                        atlas_cache[atlas_name] = self.getPilImage(atlas_name).copy()
+
+                    atlas_img = atlas_cache[atlas_name]
+
                     for sub_name, new_img in changes.items():
                         if sub_name:  # subtexture replacement
                             st = None
                             if self.subtextures.get(atlas_name):
-                                st = self.subtextures[atlas_name].get(sub_name, None) or self.getGridSubtexture(atlas_name, sub_name, self.getPilImage(atlas_name))
+                                st = self.subtextures[atlas_name].get(sub_name, None)
 
                             if not st:
                                 raise Exception(f"Could not resolve subtexture: {sub_name}")
@@ -425,6 +431,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.project_dir = project_dir
         self.useCustomNames: bool = False
+        self.calcImageSize: bool = False
 
         self.setWindowTitle("DSIE")
         self.setGeometry(100, 100, 1100, 700)
@@ -495,21 +502,39 @@ class MainWindow(QMainWindow):
         self.file_menu.addAction(createAction("Exit", self.close))
 
         self.settings_menu = menu.addMenu("Settings")
-        self.toggle_action = QAction("Use Names", self)
-        self.toggle_action.setCheckable(True)
-        self.toggle_action.setChecked(self.useCustomNames)
-        self.toggle_action.toggled.connect(self.toggleCustomNames)
-        self.settings_menu.addAction(self.toggle_action)
+        self.toggle_action_names = QAction("Custom Names", self)
+        self.toggle_action_names.setCheckable(True)
+        self.toggle_action_names.setChecked(self.useCustomNames)
+        self.toggle_action_names.toggled.connect(self.toggleCustomNames)
+        self.toggle_action_image = QAction("Calculate Image Size", self)
+        self.toggle_action_image.setCheckable(True)
+        self.toggle_action_image.setChecked(self.calcImageSize)
+        self.toggle_action_image.toggled.connect(self.toggleCalcImageSize)
+        self.settings_menu.addAction(self.toggle_action_image)
+        self.settings_menu.addAction(self.toggle_action_names)
 
         self.searchButton = menu.addAction(createAction("Search", self.openSearchWindow))
         self.searchButton = menu.addAction(createAction("Replace", self.registerReplacement))
 
         self.help_menu = menu.addMenu("Help")
-        self.help_menu.addAction(createAction("Replace", lambda: QMessageBox.information(self, "Replacement", 
+        self.help_menu.addAction(createAction("Settings", lambda: QMessageBox.information(self, "Settings", "Custom Names:<br> When enabled, this setting replaces" \
+                                                                                                " most atlas and subtexture names with more user-friendly ones. " \
+                                                                                                "The new atlas names were written manually by me, and are not " \
+                                                                                                "perfect. However, they may help someone less familiar with fromsoft " \
+                                                                                                "find what they are looking for. Most subtexture names were mapped " \
+                                                                                                "with a script using data from Smithbox exports, and should"
+                                                                                                " be accurate.<br><br>" \
+                                                                                                "Calculate Image Size:<br>" \
+                                                                                                "When enabled, this setting will attempt to silently convert " \
+                                                                                                "images to PNGs within memory in order to estimate their " \
+                                                                                                "compressed size. This may be useful for someone doing batch " \
+                                                                                                "exports, but it slows loading time substantially, so it's " \
+                                                                                                "disabled by default.")))
+        self.help_menu.addAction(createAction("Replacement", lambda: QMessageBox.information(self, "Replacement", 
                                                                                          "Pressing \"Replace\" will prompt you for an image file.<br>" \
-                                                                                         "DSIE will then replace the entire texture with that image if you have" \
-                                                                                         " an atlas currently selected, or an icon if a subtexture is selected." \
-                                                                                         "<br><br>After replacing, go to File->Apply Replacements to save.")))
+                                                                                         "DSIE will then replace the currently selected texture, whether that be" \
+                                                                                         " an atlas or a subtexture.<br><br>After replacing, go to" \
+                                                                                         " File->Apply Replacements to save. This may take a while.")))
         self.help_menu.addAction(createAction("About", lambda: QMessageBox.information(self, "About", 
                                                                                        "Made by <a href='https://linktr.ee/aerolitesr'>Aero</a> :><br><br>")))
 
@@ -720,6 +745,7 @@ class MainWindow(QMainWindow):
         self.info_label.setText("Image info will appear here")
 
     def runExtraction(self, tasks=None, mode=ExportMode.SUBTEXTURE):
+        """Start the extract process for images."""
         output_dir = self.project_dir / "Output"
 
         self.progress_dialog = QProgressDialog("Exporting...", "Cancel", 0, 100, self)
@@ -773,7 +799,7 @@ class MainWindow(QMainWindow):
                 item = widget.item(idx)
                 item.setText(item.data(Qt.UserRole))
 
-        self.useCustomNames = self.toggle_action.isChecked()
+        self.useCustomNames = self.toggle_action_names.isChecked()
         
         if self.useCustomNames:
             for idx in range(self.atlas_list.count()):
@@ -802,6 +828,10 @@ class MainWindow(QMainWindow):
         else:
             restoreNames(self.atlas_list)
             restoreNames(self.subtexture_list)
+
+    def toggleCalcImageSize(self):
+        """Updates the flag for if the application should calculate PNG size."""
+        self.calcImageSize = self.toggle_action_image.isChecked()
 
     def openSearchWindow(self):
         """Creates a SearchWindow instance and then handles the returned settings and string."""
@@ -839,7 +869,7 @@ class MainWindow(QMainWindow):
         tile_w = dimensions['width']
         tile_h = dimensions['height']
 
-        atlas_w, atlas_h = atlas_img.size
+        atlas_w, _ = atlas_img.size
         tiles_per_row = atlas_w // tile_w
 
         try:
@@ -856,6 +886,7 @@ class MainWindow(QMainWindow):
         return {"x": x, "y": y, "width": tile_w, "height": tile_h}
 
     def queueReplacement(self, dcx_file: Path, atlas_item, sub_item, img_path: Path):
+        """Process selection for replacement and add it to the queue."""
         atlas_name = atlas_item.data(Qt.UserRole)
         sub_name = sub_item.data(Qt.UserRole) if sub_item else None
 
@@ -887,13 +918,16 @@ class MainWindow(QMainWindow):
         atlas_item.setForeground(Qt.yellow)
         if sub_item:
             sub_item.setForeground(Qt.yellow)
-
-        preview_img = atlas_img.copy()
-        preview_img.thumbnail((600, 400), Image.Resampling.LANCZOS)
-        self.preview_label.setPixmap(self.pil2Qpixmap(preview_img))
+            self.showSubtexture(self.subtexture_list.currentItem())
+        else:
+            self.showAtlas(self.atlas_list.currentItem())
 
     def registerReplacement(self):
         """Prompt the user for an image, then add it to the replacement queue with the currently selected texture as the target."""
+        if self.atlas_list.count() == 0:
+            self.showError('No atlases loaded!')
+            return
+        
         atlas = self.atlas_list.currentItem()
         sub = self.subtexture_list.currentItem()
         dcx_file = atlas.data(Qt.UserRole+1)
@@ -909,6 +943,7 @@ class MainWindow(QMainWindow):
         self.queueReplacement(Path(dcx_file), atlas, sub, Path(img_path))
 
     def applyReplacements(self):
+        """Start replacement from File menu and create popup."""
         if not self.pending_replacements:
             QMessageBox.information(self, "Info", "No replacements queued.")
             return
@@ -918,8 +953,9 @@ class MainWindow(QMainWindow):
         self.replace_dialog.setWindowModality(Qt.ApplicationModal)
         self.replace_dialog.setCancelButton(None)
         self.replace_dialog.setMinimumDuration(0)
-        self.replace_dialog.setMinimumWidth(200)
+        self.replace_dialog.setMinimumWidth(300)
         self.replace_dialog.show()
+        self.replace_dialog.setStyleSheet("""QLabel {qproperty-alignment: AlignCenter;} QProgressBar {text-align: center;}""")
 
         self.r_thread = QThread()
         self.r_worker = ReplaceWorker(self.pending_replacements, self.subtextures, self.LOADED_DCX_FILES, self.getPilImage, self.project_dir)
@@ -934,6 +970,7 @@ class MainWindow(QMainWindow):
         self.r_thread.start()
 
     def replaceDone(self, success: bool, msg: str):
+        """Triggered on completion of tpf/dcx export."""
         self.replace_dialog.close()
         if success:
             self.extractionDone(True)
@@ -957,36 +994,43 @@ class MainWindow(QMainWindow):
 
     def formatImageInfo(self, name, pil_img, img_type="Atlas"):
         """Properly format information about the selected preview to display."""
+        def formatSize(bytes_val):
+            kb = bytes_val / 1024
+            if kb < 1024:
+                return f"{kb:.1f} KB"
+            return f"{kb / 1024:.2f} MB"
+        
         width, height = pil_img.size
-        size_uc = len(pil_img.tobytes()) / 1024
-        size_c = self.getPngSize(pil_img) / 1024
+        size_uc = formatSize(len(pil_img.tobytes()))
+        size_c = formatSize(self.getPngSize(pil_img)) if self.calcImageSize else "???"
         return (
             f"<b>Type:</b> {img_type}<br>"
             f"<b>Name:</b> {name}<br>"
             f"<b>Dimensions:</b> {width} × {height}px<br>"
-            f"<b>Uncompressed Size:</b> {size_uc:.1f} KB<br>"
-            f"<b>Compressed Size:</b> {size_c:.1f} KB"
+            f"<b>Uncompressed Size:</b> {size_uc}<br>"
+            f"<b>Compressed Size:</b> {size_c}"
         )
 
     def getPilImage(self, atlas_name):
         """Load PIL image from TPF texture on-demand."""
-        if len(self.thumbnail_cache) > 50:
-            self.thumbnail_cache.pop(next(iter(self.thumbnail_cache)))
-
-        if atlas_name in self.thumbnail_cache:
+        if atlas_name in self.thumbnail_cache: # override if image is replaced
             return self.thumbnail_cache[atlas_name]
 
         texture = self.atlases[atlas_name]['texture']
         with io.BytesIO(texture.data) as dds_buffer:
             img = Image.open(dds_buffer).convert("RGBA")
-        self.thumbnail_cache[atlas_name] = img
         return img
+
+    def isModified(self, dcx_file, atlas_name, sub_name=None):
+        """Returns True if subtexture has been replaced, for recoloring its entry."""
+        return (sub_name in self.pending_replacements.get(dcx_file, {}).get(atlas_name, {}))
 
     def showAtlas(self, current):
         """Display the selected atlas, and load all subtextures to the list."""
         if not current:
             return
         atlas_name = current.data(Qt.UserRole)
+        dcx_file = current.data(Qt.UserRole+1)
         self.current_atlas = atlas_name
         self.current_crop = None
         self.subtexture_list.clear()
@@ -1001,6 +1045,8 @@ class MainWindow(QMainWindow):
         for key in self.subtextures.get(atlas_name, {}).keys():
             item = QListWidgetItem(key)
             item.setData(Qt.UserRole, key)
+            if self.isModified(dcx_file, atlas_name, key):
+                item.setForeground(Qt.yellow)
             self.subtexture_list.addItem(item)
         
         img_type = "Atlas" if self.subtexture_list.count() > 0 else "Texture"
