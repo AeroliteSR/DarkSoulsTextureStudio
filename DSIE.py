@@ -1,21 +1,25 @@
 from __future__ import annotations
-import sys, os, io, shutil
+# Basic Modules
+import sys, os, shutil
 import numpy as np
 from io import BytesIO
+from copy import deepcopy
+from tempfile import NamedTemporaryFile
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from collections import defaultdict
+from enum import Enum, auto
+from PIL import Image, ImageDraw
+# GUI
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QListWidget, QListWidgetItem, QCheckBox,
 QLabel, QHBoxLayout, QFileDialog, QPushButton, QMessageBox, QSplitter, QProgressDialog, QInputDialog, QLineEdit, QMenu)
 from PySide6.QtGui import QPixmap, QImage, QIcon, QDesktopServices, QAction
 from PySide6.QtCore import Qt, QObject, QThread, QUrl, Signal
-from PIL import Image, ImageDraw
+# Soulstruct
 from soulstruct.containers import tpf
 from soulstruct.dcx import core, oodle
+# Custom
 from GameInfo import Maps
-from collections import defaultdict
-import tempfile
-import copy
-from enum import Enum, auto
 
 class ExportMode(Enum):
     ATLAS = auto()
@@ -101,7 +105,7 @@ class Functions():
 
             # Convert DDS to PIL Image
             texture = textures_dict[filename]
-            with io.BytesIO(texture.data) as dds_buffer:
+            with BytesIO(texture.data) as dds_buffer:
                 dds_buffer.seek(0)
                 atlas_img = Image.open(dds_buffer).convert("RGBA")
 
@@ -380,7 +384,7 @@ class ReplaceWorker(QObject):
         try:
             atlas_cache = {}
             for dcx_path, atlases in self.replacements.items():
-                base = copy.deepcopy(self.LOADED_DCX_FILES[(dcx_path).name]) # reuse to save processing power
+                base = deepcopy(self.LOADED_DCX_FILES[(dcx_path).name]) # reuse to save processing power
 
                 for atlas_name, changes in atlases.items():
                     if atlas_name not in atlas_cache:
@@ -402,7 +406,7 @@ class ReplaceWorker(QObject):
                         else:  # full atlas replacement
                             atlas_img = new_img
 
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
+                    with NamedTemporaryFile(delete=False, suffix=".png") as tmp:
                         temp_path = tmp.name
                         atlas_img.save(temp_path)
                     
@@ -988,7 +992,7 @@ class MainWindow(QMainWindow):
     
     def getPngSize(self, pil_img):
         """Simulate a png export to get file size."""
-        buf = io.BytesIO()
+        buf = BytesIO()
         pil_img.save(buf, format="PNG")
         return len(buf.getvalue())
 
@@ -1017,7 +1021,7 @@ class MainWindow(QMainWindow):
             return self.thumbnail_cache[atlas_name]
 
         texture = self.atlases[atlas_name]['texture']
-        with io.BytesIO(texture.data) as dds_buffer:
+        with BytesIO(texture.data) as dds_buffer:
             img = Image.open(dds_buffer).convert("RGBA")
         return img
 
