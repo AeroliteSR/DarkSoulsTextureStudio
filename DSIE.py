@@ -254,14 +254,14 @@ class LoadWorker(QObject):
                             tile = image.crop((x, y, x + tile_width, y + tile_height))
                             alpha = np.array(tile.getchannel("A"))
                             opacity_ratio = np.count_nonzero(alpha) / alpha.size
-                            if opacity_ratio < 0.01:
-                                continue # skip saving subtexture if it's blank
+                            isBlank: bool = opacity_ratio < 0.01
 
                             subtextures[name][str(idx)] = {
                                 "x": x,
                                 "y": y,
                                 "width": tile_width,
-                                "height": tile_height}
+                                "height": tile_height,
+                                "blank": isBlank}
 
                         self.progress.emit(percent, f"Processed {name}")
 
@@ -436,6 +436,7 @@ class MainWindow(QMainWindow):
         self.project_dir = project_dir
         self.useCustomNames: bool = False
         self.calcImageSize: bool = False
+        self.hideBlankIcons: bool = True
 
         self.setWindowTitle("DSIE")
         self.setGeometry(100, 100, 1100, 700)
@@ -451,11 +452,11 @@ class MainWindow(QMainWindow):
         splitter = QSplitter(Qt.Horizontal)
 
         self.atlas_list = QListWidget()
-        self.atlas_list.itemClicked.connect(self.showAtlas)
+        self.atlas_list.currentItemChanged.connect(self.showAtlas)
         splitter.addWidget(self.atlas_list)
 
         self.subtexture_list = QListWidget()
-        self.subtexture_list.itemClicked.connect(self.showSubtexture)
+        self.subtexture_list.currentItemChanged.connect(self.showSubtexture)
         splitter.addWidget(self.subtexture_list)
 
         right_panel = QWidget()
@@ -514,21 +515,33 @@ class MainWindow(QMainWindow):
         self.toggle_action_image.setCheckable(True)
         self.toggle_action_image.setChecked(self.calcImageSize)
         self.toggle_action_image.toggled.connect(self.toggleCalcImageSize)
-        self.settings_menu.addAction(self.toggle_action_image)
+        self.toggle_action_blank = QAction("Hide Blank Icons", self)
+        self.toggle_action_blank.setCheckable(True)
+        self.toggle_action_blank.setChecked(self.hideBlankIcons)
+        self.toggle_action_blank.toggled.connect(self.toggleHideBlankIcons)
         self.settings_menu.addAction(self.toggle_action_names)
-
+        self.settings_menu.addAction(self.toggle_action_blank)
+        self.settings_menu.addAction(self.toggle_action_image)
+        
         self.searchButton = menu.addAction(createAction("Search", self.openSearchWindow))
         self.searchButton = menu.addAction(createAction("Replace", self.registerReplacement))
 
         self.help_menu = menu.addMenu("Help")
-        self.help_menu.addAction(createAction("Settings", lambda: QMessageBox.information(self, "Settings", "Custom Names:<br> When enabled, this setting replaces" \
+        self.help_menu.addAction(createAction("Settings", lambda: QMessageBox.information(self, "Settings", "<b>Custom Names:</b><br> When enabled, this setting replaces" \
                                                                                                 " most atlas and subtexture names with more user-friendly ones. " \
                                                                                                 "The new atlas names were written manually by me, and are not " \
                                                                                                 "perfect. However, they may help someone less familiar with fromsoft " \
                                                                                                 "find what they are looking for. Most subtexture names were mapped " \
                                                                                                 "with a script using data from Smithbox exports, and should"
                                                                                                 " be accurate.<br><br>" \
-                                                                                                "Calculate Image Size:<br>" \
+                                                                                                "<b>Hide Blank Icons:</b><br>" \
+                                                                                                "Only for older games with no layout system. DSIE crops the atlases" \
+                                                                                                " in a grid layout. Because of this, some \'tiles\' may be blank. " \
+                                                                                                "DSIE automatically recognises these blank spaces and ignores them " \
+                                                                                                "when building the subtexture list. Disable this setting to show " \
+                                                                                                "the aforementioned blank spaces, for example, if you wanted to " \
+                                                                                                "place a new icon in that spot.<br><br>" \
+                                                                                                "<b>Calculate Image Size:</b><br>" \
                                                                                                 "When enabled, this setting will attempt to silently convert " \
                                                                                                 "images to PNGs within memory in order to estimate their " \
                                                                                                 "compressed size. This may be useful for someone doing batch " \
@@ -837,6 +850,11 @@ class MainWindow(QMainWindow):
         """Updates the flag for if the application should calculate PNG size."""
         self.calcImageSize = self.toggle_action_image.isChecked()
 
+    def toggleHideBlankIcons(self):
+        """Updates the flag for if the application should hide blank icons for older games."""
+        self.hideBlankIcons = self.toggle_action_blank.isChecked()
+        self.showAtlas(self.atlas_list.currentItem())
+
     def openSearchWindow(self):
         """Creates a SearchWindow instance and then handles the returned settings and string."""
         def handle_search(text, atlasMode):
@@ -1037,7 +1055,6 @@ class MainWindow(QMainWindow):
         dcx_file = current.data(Qt.UserRole+1)
         self.current_atlas = atlas_name
         self.current_crop = None
-        self.subtexture_list.clear()
 
         atlas_img = self.getPilImage(atlas_name)
         preview_img = atlas_img.copy()
@@ -1046,13 +1063,21 @@ class MainWindow(QMainWindow):
         self.preview_label.setPixmap(pixmap)
 
         # Load subtextures
-        for key in self.subtextures.get(atlas_name, {}).keys():
+        self.subtexture_list.blockSignals(True)
+        self.subtexture_list.clear()
+        for key, val in self.subtextures.get(atlas_name, {}).items():
             item = QListWidgetItem(key)
             item.setData(Qt.UserRole, key)
+
             if self.isModified(dcx_file, atlas_name, key):
                 item.setForeground(Qt.yellow)
+
+            if self.hideBlankIcons and val['blank']:
+                continue
+
             self.subtexture_list.addItem(item)
-        
+        self.subtexture_list.blockSignals(False)
+
         img_type = "Atlas" if self.subtexture_list.count() > 0 else "Texture"
         self.info_label.setText(self.formatImageInfo(atlas_name, atlas_img, img_type))
         self.toggleCustomNames() # just to update it
@@ -1061,10 +1086,15 @@ class MainWindow(QMainWindow):
         """Display a preview of the selected subtexture."""
         if not current or not self.current_atlas:
             return
-        name = current.data(Qt.UserRole)
-        st = self.subtextures[self.current_atlas][name]
+        
+        try:
+            name = current.data(Qt.UserRole)
+            st = self.subtextures[self.current_atlas][name]
+            atlas_img = self.getPilImage(self.current_atlas)
+        except KeyError:
+            self.subtexture_list.blockSignals(False)
+            return
 
-        atlas_img = self.getPilImage(self.current_atlas)
         cropped = atlas_img.crop((st["x"], st["y"], st["x"] + st["width"], st["y"] + st["height"]))
         cropped.thumbnail((600, 400), Image.Resampling.LANCZOS)
         pixmap = self.pil2Qpixmap(cropped)

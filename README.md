@@ -31,6 +31,9 @@ Currently the `Settings` tab has only two options:
 `Custom Names` - This setting replaces the internal names with mapped ones in `GameInfo.py`. 
 This setting can be especially useful for if you don't know the ID of an item in a big list, allowing you to search by its display name. 
 Some data, such as Nightreign garbs and Sekiro bosses, were mapped manually, but most of it was scripted from Smithbox exports.  
+`Hide Blank Icons` - Only for older games with no layout system. DSIE crops the atlases in a grid layout. Because of this, some 'tiles' 
+may be blank. DSIE automatically recognises these blank spaces and ignores them when building the subtexture list. Disable this setting to show 
+the aforementioned blank spaces, for example, if you wanted to place a new icon in that spot.  
 `Calculate Image Size` - When enabled, simulates the creation of a PNG image to display its file size. This info may be nice to know, but it comes at 
 a significant performance drop. It is, therefore, disabled by default.  
   
