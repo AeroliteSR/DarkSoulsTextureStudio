@@ -9,7 +9,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from collections import defaultdict
 from enum import Enum, auto
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, UnidentifiedImageError
 # GUI
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QListWidget, QListWidgetItem, QCheckBox,
 QLabel, QHBoxLayout, QFileDialog, QPushButton, QMessageBox, QSplitter, QProgressDialog, QInputDialog, QLineEdit)
@@ -907,7 +907,11 @@ class MainWindow(QMainWindow):
         sub_name = sub_item.data(Qt.UserRole) if sub_item else None
 
         atlas_img = self.getPilImage(atlas_name).copy()
-        new_img = Image.open(img_path).convert("RGBA")
+        try:
+            new_img = Image.open(img_path).convert("RGBA")
+        except UnidentifiedImageError:
+            self.showError("Selected file is not an image supported by PIL.")
+            return
 
         if sub_name: # subtexture replacement
             st = None
@@ -952,7 +956,7 @@ class MainWindow(QMainWindow):
             self.showError('No atlas loaded!')
             return
 
-        img_path = Path(QFileDialog.getOpenFileName(self, "Select Image", "", "")[0])
+        img_path = Path(QFileDialog.getOpenFileName(self, "Select Image", "", "Image Files (*.png *.dds *.jpg *.webm *.jpeg);;All Files (*.*)")[0])
         if not img_path or img_path == Path('.'):
             return
         
