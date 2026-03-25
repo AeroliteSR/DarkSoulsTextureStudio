@@ -36,6 +36,8 @@ may be blank. DSIE automatically recognises these blank spaces and ignores them 
 the aforementioned blank spaces, for example, if you wanted to place a new icon in that spot.  
 `Calculate Image Size` - When enabled, simulates the creation of a PNG image to display its file size. This info may be nice to know, but it comes at 
 a significant performance drop. It is, therefore, disabled by default.  
+`Show Icon Borders` - Draws a red bounding box around subtextures wherever possible. This will not be visible on texture dumps or replacements, 
+but can be optionally selected for atlas exports.  
   
 You can press the `Search` button on the menu bar to open a prompt for a string. It defaults to Qt.MatchContains within the subtextures list.
 If you want it to search through atlases (for example, for DS2), check `Search Atlases`  
