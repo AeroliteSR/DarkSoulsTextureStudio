@@ -1,6 +1,6 @@
 from __future__ import annotations
 # Basic Modules
-import sys, os, shutil
+import sys, os, shutil, re
 import numpy as np
 from io import BytesIO
 from copy import deepcopy
@@ -12,7 +12,7 @@ from enum import Enum, auto
 from PIL import Image, ImageDraw
 # GUI
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QListWidget, QListWidgetItem, QCheckBox,
-QLabel, QHBoxLayout, QFileDialog, QPushButton, QMessageBox, QSplitter, QProgressDialog, QInputDialog, QLineEdit, QMenu)
+QLabel, QHBoxLayout, QFileDialog, QPushButton, QMessageBox, QSplitter, QProgressDialog, QInputDialog, QLineEdit)
 from PySide6.QtGui import QPixmap, QImage, QIcon, QDesktopServices, QAction
 from PySide6.QtCore import Qt, QObject, QThread, QUrl, Signal
 # Soulstruct
@@ -21,11 +21,43 @@ from soulstruct.dcx import core, oodle
 # Custom
 from GameInfo import Maps
 
+class NaturalListItem(QListWidgetItem):
+    def __init__(self, text):
+        super().__init__(text)
+        self._key = Functions.naturalSortKey(text)
+
+    def __lt__(self, other):
+        return self._key < other._key
+
 class ExportMode(Enum):
     ATLAS = auto()
     SUBTEXTURE = auto()
 
+class GameType(Enum):
+    OLD = auto()
+    MODERN = auto()
+
+class Game():
+    OLD_GAMES = {"Dark Souls 1", "Dark Souls 2", "Dark Souls 3"}
+
+    def __init__(self, name: str):
+        self.name = name
+        self.type = self.classify(name)
+
+    def classify(self, name: str) -> GameType:
+        if name in self.OLD_GAMES:
+            return GameType.OLD
+        else:
+            return GameType.MODERN
+
+    def __repr__(self):
+        return f"Game({self.name}, {self.type.name})"
+
 class Functions():
+    @staticmethod
+    def naturalSortKey(text):
+        return [int(t) if t.isdigit() else t.lower() for t in re.split(r'(\d+)', text)]
+    
     @staticmethod
     def replaceTerms(text, terms: dict):
         if text:
@@ -69,72 +101,35 @@ class Functions():
         return None
 
     @staticmethod
-    def createDebugGrid(image, tiles_per_column, tiles_per_row, tile_width, tile_height):
+    def createDebugGrid(image, subtextures):
         """Outputs a png with grid lines for debugging"""
+        if len(subtextures) == 0:
+            return image
+        
         debug = image.copy()
         draw = ImageDraw.Draw(debug)
 
-        for row in range(tiles_per_column):
-            for col in range(tiles_per_row):
-                x = col * tile_width
-                y = row * tile_height
-                draw.rectangle([x, y, x + tile_width, y + tile_height], outline="red", width=1)
+        for icn in subtextures.values():
+            width = icn['width']
+            height = icn['height']
+            x = icn['x']
+            y = icn['y']
+            draw.rectangle([x, y, x + width, y + height], outline="red", width=1)
 
-        debug.save("debug_grid.png")
-
-    @staticmethod
-    def loadTextures(dcx_path, layout_path):
-        """Load textures from the TPF.DCX and parse layout XML
-        This function is no longer used"""
-        layout_xml = Functions.getLayoutData(layout_path)
-        root = ET.fromstring(layout_xml, parser=None) # SET TO PARSER IF USED
-
-        tpfdcx = tpf.TPF.from_path(dcx_path)
-        textures_dict = {texture.stem: texture for texture in tpfdcx.textures}
-
-        atlases = {}
-        subtextures = {}
-
-        for texture_atlas in root.findall("TextureAtlas"):
-            filepath = texture_atlas.get("imagePath")
-            filename = Path(filepath).stem
-
-            if filename not in textures_dict:
-                print(f"{filename} not found in TPF textures, skipping.")
-                continue
-
-            # Convert DDS to PIL Image
-            texture = textures_dict[filename]
-            with BytesIO(texture.data) as dds_buffer:
-                dds_buffer.seek(0)
-                atlas_img = Image.open(dds_buffer).convert("RGBA")
-
-            atlases[filename] = atlas_img
-            subtextures[filename] = []
-
-            for subtexture in texture_atlas.findall("SubTexture"):
-                subtextures[filename].append({
-                    "name": subtexture.get("name"),
-                    "x": int(subtexture.get("x")),
-                    "y": int(subtexture.get("y")),
-                    "width": int(subtexture.get("width")),
-                    "height": int(subtexture.get("height")),
-                })
-
-        return atlases, subtextures
+        return debug
 
 class LoadWorker(QObject):
     progress = Signal(int, str)   # percent, message
     finished = Signal(dict, dict, dict)  # atlases, subtextures, loaded dcx files
 
-    def __init__(self, file_mappings, game_type):
+    def __init__(self, file_mappings, game: Game):
         super().__init__()
         self.file_mappings = file_mappings
-        self.game = game_type
+        self.game = game
         self.LOADED_DCX_FILES = {}
 
     def run(self):
-        if self.game in ['Dark Souls 1', 'Dark Souls 2', 'Dark Souls 3',]:
+        if self.game.type == GameType.OLD:
             self.processOld()
         else: # sblyt is used
             self.processModern()
@@ -199,7 +194,8 @@ class LoadWorker(QObject):
                                 "x": int(sub.get("x")),
                                 "y": int(sub.get("y")),
                                 "width": int(sub.get("width")),
-                                "height": int(sub.get("height"))}
+                                "height": int(sub.get("height")),
+                                "blank": False}
 
                 elif isinstance(file, Path):
                     textures_dict: dict = self.generateTextDict(file, percent)
@@ -233,7 +229,7 @@ class LoadWorker(QObject):
                     dds = texture.get_dds()
                     image = Image.open(BytesIO(dds.to_bytes())).convert("RGBA")
 
-                    texmap = Maps.TextureDimensions[self.game]
+                    texmap = Maps.TextureDimensions[self.game.name]
                     dimensions = texmap.get(name, None)
                     if dimensions:
                         tile_width, tile_height = dimensions['width'], dimensions['height']
@@ -434,9 +430,6 @@ class MainWindow(QMainWindow):
     def __init__(self, project_dir):
         super().__init__()
         self.project_dir = project_dir
-        self.useCustomNames: bool = False
-        self.calcImageSize: bool = False
-        self.hideBlankIcons: bool = True
 
         self.setWindowTitle("DSIE")
         self.setGeometry(100, 100, 1100, 700)
@@ -453,10 +446,12 @@ class MainWindow(QMainWindow):
 
         self.atlas_list = QListWidget()
         self.atlas_list.currentItemChanged.connect(self.showAtlas)
+        self.atlas_list.itemClicked.connect(self.showAtlas)
         splitter.addWidget(self.atlas_list)
 
         self.subtexture_list = QListWidget()
         self.subtexture_list.currentItemChanged.connect(self.showSubtexture)
+        self.subtexture_list.itemClicked.connect(self.showSubtexture)
         splitter.addWidget(self.subtexture_list)
 
         right_panel = QWidget()
@@ -507,21 +502,27 @@ class MainWindow(QMainWindow):
         self.file_menu.addAction(createAction("Exit", self.close))
 
         self.settings_menu = menu.addMenu("Settings")
-        self.toggle_action_names = QAction("Custom Names", self)
-        self.toggle_action_names.setCheckable(True)
-        self.toggle_action_names.setChecked(self.useCustomNames)
-        self.toggle_action_names.toggled.connect(self.toggleCustomNames)
-        self.toggle_action_image = QAction("Calculate Image Size", self)
-        self.toggle_action_image.setCheckable(True)
-        self.toggle_action_image.setChecked(self.calcImageSize)
-        self.toggle_action_image.toggled.connect(self.toggleCalcImageSize)
-        self.toggle_action_blank = QAction("Hide Blank Icons", self)
-        self.toggle_action_blank.setCheckable(True)
-        self.toggle_action_blank.setChecked(self.hideBlankIcons)
-        self.toggle_action_blank.toggled.connect(self.toggleHideBlankIcons)
-        self.settings_menu.addAction(self.toggle_action_names)
-        self.settings_menu.addAction(self.toggle_action_blank)
-        self.settings_menu.addAction(self.toggle_action_image)
+
+        self.btn_useCustomNames = QAction("Custom Names", self)
+        self.btn_useCustomNames.setCheckable(True)
+        self.btn_useCustomNames.toggled.connect(self.toggleCustomNames)
+
+        self.btn_calcImageSize = QAction("Calculate Image Size", self)
+        self.btn_calcImageSize.setCheckable(True)
+
+        self.btn_hideBlankIcons = QAction("Hide Blank Icons", self)
+        self.btn_hideBlankIcons.setCheckable(True)
+        self.btn_hideBlankIcons.setChecked(True)
+        self.btn_hideBlankIcons.toggled.connect(lambda: self.showAtlas(self.atlas_list.currentItem()))
+
+        self.btn_atlasGrid = QAction("Show Icon Borders", self)
+        self.btn_atlasGrid.setCheckable(True)
+        self.btn_atlasGrid.toggled.connect(lambda: self.showAtlas(self.atlas_list.currentItem()))
+
+        self.settings_menu.addAction(self.btn_useCustomNames)
+        self.settings_menu.addAction(self.btn_hideBlankIcons)
+        self.settings_menu.addAction(self.btn_calcImageSize)
+        self.settings_menu.addAction(self.btn_atlasGrid)
         
         self.searchButton = menu.addAction(createAction("Search", self.openSearchWindow))
         self.searchButton = menu.addAction(createAction("Replace", self.registerReplacement))
@@ -625,12 +626,13 @@ class MainWindow(QMainWindow):
         str_path = str(files[0].parent if dirmode else files[0])
         self.setWindowTitle(f"DSIE - {str_path}")
 
-        self.game = Functions.parseGameType(path=str_path) or Functions.gameTypeDialog()
-        if not self.game:
+        game = Functions.parseGameType(path=str_path) or Functions.gameTypeDialog()
+        if not game:
             return
+        self.game = Game(game)
 
         file_mappings = []
-        if self.game == 'Nightreign':
+        if self.game.name == 'Nightreign':
             if not dirmode:
                 files += [f for f in file_path.parent.glob("*.sblytbnd.dcx")]
 
@@ -692,7 +694,7 @@ class MainWindow(QMainWindow):
 
             file_mappings.extend(standalone) # no layout
 
-        elif self.game in ['Sekiro', 'Elden Ring']:
+        elif self.game.name in ['Sekiro', 'Elden Ring']:
             for f in files:
                 if 'sblytbnd' in str(f):
                     continue
@@ -752,14 +754,13 @@ class MainWindow(QMainWindow):
 
         self.atlas_list.clear()
         for name, _atlas in atlases.items():
-            item = QListWidgetItem(name)
+            item = NaturalListItem(name)
             item.setData(Qt.UserRole, name) # original name
             item.setData(Qt.UserRole+1, _atlas['parent']) # parent file
             self.atlas_list.addItem(item)
-
-        self.subtexture_list.clear()
-        self.preview_label.setText("Select an atlas or subtexture")
-        self.info_label.setText("Image info will appear here")
+        self.atlas_list.sortItems()
+        self.toggleCustomNames() # simply update it just in case setting was on before load
+        self.atlas_list.setCurrentRow(0)
 
     def runExtraction(self, tasks=None, mode=ExportMode.SUBTEXTURE):
         """Start the extract process for images."""
@@ -816,16 +817,14 @@ class MainWindow(QMainWindow):
                 item = widget.item(idx)
                 item.setText(item.data(Qt.UserRole))
 
-        self.useCustomNames = self.toggle_action_names.isChecked()
-        
-        if self.useCustomNames:
+        if self.btn_useCustomNames.isChecked():
             for idx in range(self.atlas_list.count()):
                 item = self.atlas_list.item(idx)
                 text = item.text()
-                if self.game == 'Dark Souls 2': # special handling due to weird naming system
+                if self.game.name == 'Dark Souls 2': # special handling due to weird naming system
                     text = text[text.rfind('_')+1:]
 
-                name = Maps.AtlasNames[self.game].get(text, None) or item.text()
+                name = Maps.AtlasNames[self.game.name].get(text, None) or item.text()
                 item.setText(name)
             
             for idx in range(self.subtexture_list.count()):
@@ -836,7 +835,7 @@ class MainWindow(QMainWindow):
                 try:
                     id = pieces[-1]
                     _type = pieces[0]
-                    name = Maps.TextureNames[self.game].get(_type, {}).get(id.lstrip('0'), None) or text
+                    name = Maps.TextureNames[self.game.name].get(_type, {}).get(id.lstrip('0'), None) or text
                 except IndexError:
                     name = text
 
@@ -845,15 +844,6 @@ class MainWindow(QMainWindow):
         else:
             restoreNames(self.atlas_list)
             restoreNames(self.subtexture_list)
-
-    def toggleCalcImageSize(self):
-        """Updates the flag for if the application should calculate PNG size."""
-        self.calcImageSize = self.toggle_action_image.isChecked()
-
-    def toggleHideBlankIcons(self):
-        """Updates the flag for if the application should hide blank icons for older games."""
-        self.hideBlankIcons = self.toggle_action_blank.isChecked()
-        self.showAtlas(self.atlas_list.currentItem())
 
     def openSearchWindow(self):
         """Creates a SearchWindow instance and then handles the returned settings and string."""
@@ -882,7 +872,7 @@ class MainWindow(QMainWindow):
 
     def getGridSubtexture(self, atlas_name, sub_name, atlas_img):
         """Returns (x, y, width, height) for atlases that don't use layouts. Aka from older games."""
-        texmap = Maps.TextureDimensions[self.game]
+        texmap = Maps.TextureDimensions[self.game.name]
         dimensions = texmap.get(atlas_name, None)
 
         if not dimensions:
@@ -1023,8 +1013,8 @@ class MainWindow(QMainWindow):
             return f"{kb / 1024:.2f} MB"
         
         width, height = pil_img.size
-        size_uc = formatSize(len(pil_img.tobytes()))
-        size_c = formatSize(self.getPngSize(pil_img)) if self.calcImageSize else "???"
+        size_uc = formatSize(width * height * len(pil_img.getbands()))
+        size_c = formatSize(self.getPngSize(pil_img)) if self.btn_calcImageSize.isChecked() else "???"
         return (
             f"<b>Type:</b> {img_type}<br>"
             f"<b>Name:</b> {name}<br>"
@@ -1033,14 +1023,18 @@ class MainWindow(QMainWindow):
             f"<b>Compressed Size:</b> {size_c}"
         )
 
-    def getPilImage(self, atlas_name):
+    def getPilImage(self, atlas_name, createDebug: bool = False):
         """Load PIL image from TPF texture on-demand."""
         if atlas_name in self.thumbnail_cache: # override if image is replaced
-            return self.thumbnail_cache[atlas_name]
+            img = self.thumbnail_cache[atlas_name]
+        else:
+            texture = self.atlases[atlas_name]['texture']
+            with BytesIO(texture.data) as dds_buffer:
+                img = Image.open(dds_buffer).convert("RGBA")
 
-        texture = self.atlases[atlas_name]['texture']
-        with BytesIO(texture.data) as dds_buffer:
-            img = Image.open(dds_buffer).convert("RGBA")
+        if createDebug:
+            img = Functions.createDebugGrid(img, self.subtextures[atlas_name])
+
         return img
 
     def isModified(self, dcx_file, atlas_name, sub_name=None):
@@ -1056,7 +1050,7 @@ class MainWindow(QMainWindow):
         self.current_atlas = atlas_name
         self.current_crop = None
 
-        atlas_img = self.getPilImage(atlas_name)
+        atlas_img = self.getPilImage(atlas_name, createDebug=self.btn_atlasGrid.isChecked())
         preview_img = atlas_img.copy()
         preview_img.thumbnail((600, 400), Image.Resampling.LANCZOS)
         pixmap = self.pil2Qpixmap(preview_img)
@@ -1066,17 +1060,19 @@ class MainWindow(QMainWindow):
         self.subtexture_list.blockSignals(True)
         self.subtexture_list.clear()
         for key, val in self.subtextures.get(atlas_name, {}).items():
-            item = QListWidgetItem(key)
+            if self.btn_hideBlankIcons.isChecked() and val['blank']:
+                continue
+
+            item = NaturalListItem(key)
             item.setData(Qt.UserRole, key)
 
             if self.isModified(dcx_file, atlas_name, key):
                 item.setForeground(Qt.yellow)
 
-            if self.hideBlankIcons and val['blank']:
-                continue
-
             self.subtexture_list.addItem(item)
+
         self.subtexture_list.blockSignals(False)
+        self.subtexture_list.sortItems()
 
         img_type = "Atlas" if self.subtexture_list.count() > 0 else "Texture"
         self.info_label.setText(self.formatImageInfo(atlas_name, atlas_img, img_type))
@@ -1116,7 +1112,18 @@ class MainWindow(QMainWindow):
         else: # No subtexture selected, export the full atlas
             out_path = self.project_dir / "Output" /"_Atlases"
             out_path.mkdir(parents=True, exist_ok=True)
-            atlas_img = self.getPilImage(self.current_atlas)
+
+            gridOverlay = self.btn_atlasGrid.isChecked()
+            if gridOverlay:
+                answer = QMessageBox.question(self, 'Export', 'You currently have the Grid Overlay enabled, do you want to keep it in the image for this export?',
+                                     QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
+                if answer == QMessageBox.Cancel:
+                    return
+                
+                elif answer == QMessageBox.No:
+                    gridOverlay = False
+
+            atlas_img = self.getPilImage(self.current_atlas, createDebug=gridOverlay)
             atlas_img.save(out_path / f"{self.current_atlas}.png")
             self.extractionDone()
 
