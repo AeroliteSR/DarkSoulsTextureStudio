@@ -547,7 +547,11 @@ class MainWindow(QMainWindow):
                                                                                                 "images to PNGs within memory in order to estimate their " \
                                                                                                 "compressed size. This may be useful for someone doing batch " \
                                                                                                 "exports, but it slows loading time substantially, so it's " \
-                                                                                                "disabled by default.")))
+                                                                                                "disabled by default.<br><br>" \
+                                                                                                "<b>Show Icon Borders:</b><br>" \
+                                                                                                "Draws a red bounding box around subtextures wherever possible. " \
+                                                                                                "This will not be visible on texture dumps or replacements, " \
+                                                                                                "but can be optionally selected for atlas exports.")))
         self.help_menu.addAction(createAction("Replacement", lambda: QMessageBox.information(self, "Replacement", 
                                                                                          "Pressing \"Replace\" will prompt you for an image file.<br>" \
                                                                                          "DSIE will then replace the currently selected texture, whether that be" \
