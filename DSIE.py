@@ -21,6 +21,8 @@ from soulstruct.dcx import core, oodle
 # Custom
 from GameInfo import Maps
 
+BLANK_PATH = Path('.')
+
 class NaturalListItem(QListWidgetItem):
     def __init__(self, text):
         super().__init__(text)
@@ -54,6 +56,23 @@ class Game():
         return f"Game({self.name}, {self.type.name})"
 
 class Functions():
+    @staticmethod
+    def cleanByAlpha(img: Image.Image, threshold: int = 5) -> Image.Image:
+        """Zero RGB values where alpha <= threshold."""
+        arr = np.array(img)
+        r, g, b, a = arr[..., 0], arr[..., 1], arr[..., 2], arr[..., 3]
+        mask = a <= threshold
+
+        r[mask] = 0
+        g[mask] = 0
+        b[mask] = 0
+
+        arr[..., 0] = r
+        arr[..., 1] = g
+        arr[..., 2] = b
+
+        return Image.fromarray(arr, "RGBA")
+    
     @staticmethod
     def naturalSortKey(text):
         return [int(t) if t.isdigit() else t.lower() for t in re.split(r'(\d+)', text)]
@@ -237,7 +256,6 @@ class LoadWorker(QObject):
                         atlas_width, atlas_height = dds.header.width, dds.header.height
                         tiles_per_row = atlas_width // tile_width
                         tiles_per_column = atlas_height // tile_height
-                        #Functions.createDebugGrid(image, tiles_per_column, tiles_per_row, tile_width, tile_height)
 
                         total_tiles = tiles_per_row * tiles_per_column
 
@@ -295,7 +313,7 @@ class ExtractWorker(QObject):
         self.progress.emit(progress, message)
 
     def run(self):
-        if not self.tasks:
+        if not self.tasks: # dump mode
             if self.mode == ExportMode.ATLAS:
                 if not self.atlases:
                     self.finished.emit(False)
@@ -430,6 +448,7 @@ class MainWindow(QMainWindow):
     def __init__(self, project_dir):
         super().__init__()
         self.project_dir = project_dir
+        self.alphaThreshold = 0
 
         self.setWindowTitle("DSIE")
         self.setGeometry(100, 100, 1100, 700)
@@ -473,9 +492,9 @@ class MainWindow(QMainWindow):
         self.save_button.clicked.connect(self.saveSelection)
         right_layout.addWidget(self.save_button)
 
-        self.save_all_button = QPushButton("Export All Subtextures From Atlas")
-        self.save_all_button.clicked.connect(self.saveAll)
-        right_layout.addWidget(self.save_all_button)
+        self.replace_button = QPushButton("Replace Selected Texture")
+        self.replace_button.clicked.connect(self.registerReplacement)
+        right_layout.addWidget(self.replace_button)
 
         splitter.addWidget(right_panel)
 
@@ -519,13 +538,17 @@ class MainWindow(QMainWindow):
         self.btn_atlasGrid.setCheckable(True)
         self.btn_atlasGrid.toggled.connect(lambda: self.showAtlas(self.atlas_list.currentItem()))
 
+        self.btn_alphaThreshold = QAction(f"Alpha Threshold = {self.alphaThreshold}", self)
+        self.btn_alphaThreshold.triggered.connect(self.promptAlphaThreshold)
+
         self.settings_menu.addAction(self.btn_useCustomNames)
         self.settings_menu.addAction(self.btn_hideBlankIcons)
         self.settings_menu.addAction(self.btn_calcImageSize)
         self.settings_menu.addAction(self.btn_atlasGrid)
+        self.settings_menu.addSeparator()
+        self.settings_menu.addAction(self.btn_alphaThreshold)
         
         self.searchButton = menu.addAction(createAction("Search", self.openSearchWindow))
-        self.searchButton = menu.addAction(createAction("Replace", self.registerReplacement))
 
         self.help_menu = menu.addMenu("Help")
         self.help_menu.addAction(createAction("Settings", lambda: QMessageBox.information(self, "Settings", "<b>Custom Names:</b><br> When enabled, this setting replaces" \
@@ -551,7 +574,10 @@ class MainWindow(QMainWindow):
                                                                                                 "<b>Show Icon Borders:</b><br>" \
                                                                                                 "Draws a red bounding box around subtextures wherever possible. " \
                                                                                                 "This will not be visible on texture dumps or replacements, " \
-                                                                                                "but can be optionally selected for atlas exports.")))
+                                                                                                "but can be optionally selected for atlas exports.<br><br>" \
+                                                                                                "<b>Alpha Threshold:</b><br>" \
+                                                                                                "Any pixel with an alpha value less than or equal to this number " \
+                                                                                                "will have their RGB values set to 0. Click to update the value.")))
         self.help_menu.addAction(createAction("Replacement", lambda: QMessageBox.information(self, "Replacement", 
                                                                                          "Pressing \"Replace\" will prompt you for an image file.<br>" \
                                                                                          "DSIE will then replace the currently selected texture, whether that be" \
@@ -567,6 +593,13 @@ class MainWindow(QMainWindow):
         msg.setWindowTitle("Error") 
         msg.setText(text) 
         msg.exec() 
+
+    def showQuery(self, title, text):
+        return QMessageBox.question(self, title, text, QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
+    
+    def showSelectOptions(self, title, text, options):
+        choice, ok = QInputDialog.getItem(self, title, text, options, 0, False)
+        return ok, choice
 
     def clear(self):
         """Completely reset the window."""
@@ -620,7 +653,7 @@ class MainWindow(QMainWindow):
             files = [file_path] if file_path else []
         else:
             dir_path = Path(QFileDialog.getExistingDirectory(self, "Select Folder"))
-            if not dir_path or dir_path == Path('.'):
+            if not dir_path or dir_path == BLANK_PATH:
                 return
             files = [f for pattern in ["*.tpf.dcx", "*.tpf", "*sblytbnd.dcx"] for f in dir_path.glob(pattern)]
 
@@ -674,7 +707,7 @@ class MainWindow(QMainWindow):
                     continue
 
                 if len(available) > 1:
-                    choice, ok = QInputDialog.getItem(self, "Select Resolution", f"{prefix} has both high and low resolution. Which do you want?", available, 0, False)
+                    ok, choice = self.showSelectOptions("Select Resolution", f"{prefix} has both high and low resolution. Which do you want?", available)
                     if not ok:
                         return
                 else:
@@ -761,7 +794,10 @@ class MainWindow(QMainWindow):
             item = NaturalListItem(name)
             item.setData(Qt.UserRole, name) # original name
             item.setData(Qt.UserRole+1, _atlas['parent']) # parent file
+            img_type = "Atlas" if len(self.subtextures.get(name, {})) > 0 else "Texture"
+            item.setData(Qt.UserRole+2, img_type) # image type
             self.atlas_list.addItem(item)
+
         self.atlas_list.sortItems()
         self.toggleCustomNames() # simply update it just in case setting was on before load
         self.atlas_list.setCurrentRow(0)
@@ -848,6 +884,14 @@ class MainWindow(QMainWindow):
         else:
             restoreNames(self.atlas_list)
             restoreNames(self.subtexture_list)
+
+    def promptAlphaThreshold(self):
+        num, ok = QInputDialog.getInt(None, "Prompt", "Enter new Alpha Threshold:", 10, 0, 255, 1)
+        if not ok:
+            return
+        self.alphaThreshold = num
+        self.btn_alphaThreshold.setText(f"Alpha Threshold = {num}")
+        self.showAtlas(self.atlas_list.currentItem())
 
     def openSearchWindow(self):
         """Creates a SearchWindow instance and then handles the returned settings and string."""
@@ -957,7 +1001,7 @@ class MainWindow(QMainWindow):
             return
 
         img_path = Path(QFileDialog.getOpenFileName(self, "Select Image", "", "Image Files (*.png *.dds *.jpg *.webm *.jpeg);;All Files (*.*)")[0])
-        if not img_path or img_path == Path('.'):
+        if not img_path or img_path == BLANK_PATH:
             return
         
         self.queueReplacement(Path(dcx_file), atlas, sub, Path(img_path))
@@ -1042,6 +1086,8 @@ class MainWindow(QMainWindow):
 
         if createDebug:
             img = Functions.createDebugGrid(img, self.subtextures[atlas_name])
+        if self.alphaThreshold > 0:
+            img = Functions.cleanByAlpha(img, threshold=self.alphaThreshold)
 
         return img
 
@@ -1082,8 +1128,7 @@ class MainWindow(QMainWindow):
         self.subtexture_list.blockSignals(False)
         self.subtexture_list.sortItems()
 
-        img_type = "Atlas" if self.subtexture_list.count() > 0 else "Texture"
-        self.info_label.setText(self.formatImageInfo(atlas_name, atlas_img, img_type))
+        self.info_label.setText(self.formatImageInfo(atlas_name, atlas_img, current.data(Qt.UserRole+2)))
         self.toggleCustomNames() # just to update it
 
     def showSubtexture(self, current):
@@ -1117,14 +1162,24 @@ class MainWindow(QMainWindow):
             key = self.subtexture_list.currentItem().data(Qt.UserRole)
             self.runExtraction(tasks=[(self.current_atlas, key)])
 
-        else: # No subtexture selected, export the full atlas
+        else: # No subtexture selected, export the full atlas   
+            img_type = self.atlas_list.currentItem().data(Qt.UserRole+2)
+            if img_type == "Atlas":
+                ok, choice = self.showSelectOptions("Select Export", f"The currently selected texture is an atlas.\nWould you like to export the whole image, " \
+                                                    "or its subtextures?", ["Full Atlas", "All Subtextures"])
+                
+                if not ok:
+                    return
+                if choice == "All Subtextures":
+                    self.saveAll()
+                    return
+
             out_path = self.project_dir / "Output" /"_Atlases"
             out_path.mkdir(parents=True, exist_ok=True)
 
             gridOverlay = self.btn_atlasGrid.isChecked()
             if gridOverlay:
-                answer = QMessageBox.question(self, 'Export', 'You currently have the Grid Overlay enabled, do you want to keep it in the image for this export?',
-                                     QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
+                answer = self.showQuery('Export', 'You currently have the Grid Overlay enabled, do you want to keep it in the image for this export?')
                 if answer == QMessageBox.Cancel:
                     return
                 
@@ -1170,4 +1225,4 @@ if __name__ == "__main__":
     main()
 
 # nuitka --standalone --onefile --windows-console-mode=disable --enable-plugin=pyside6 --windows-icon-from-ico=icon.ico --include-data-file=icon.ico=icon.ico --msvc=latest --lto=yes DSIE.py
-# pyinstaller DSIE.py --noconsole --icon=icon.ico --add-data "icon.ico;." --collect-data soulstruct
+# pyinstaller DSIE.py --noconsole --icon=icon.ico --add-data "icon.ico;." --add-binary "soulstruct/base/textures/texconv.exe;soulstruct/base/textures" --collect-data soulstruct
