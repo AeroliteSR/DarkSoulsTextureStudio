@@ -38,6 +38,7 @@ the aforementioned blank spaces, for example, if you wanted to place a new icon 
 a significant performance drop. It is, therefore, disabled by default.  
 `Show Icon Borders` - Draws a red bounding box around subtextures wherever possible. This will not be visible on texture dumps or replacements, 
 but can be optionally selected for atlas exports.  
+`Alpha Threshold` - Any pixel with an alpha value less than or equal to this number will have their RGB values set to 0. Click to update the value.  
   
 You can press the `Search` button on the menu bar to open a prompt for a string. It defaults to Qt.MatchContains within the subtextures list.
 If you want it to search through atlases (for example, for DS2), check `Search Atlases`  
