@@ -686,7 +686,12 @@ class MainWindow(QMainWindow):
                                                                                          "Pressing \"Replace\" will prompt you for an image file.<br>" \
                                                                                          "DSIE will then replace the currently selected texture, whether that be" \
                                                                                          " an atlas or a subtexture.<br><br>After replacing, go to" \
-                                                                                         " File->Apply Replacements to save. This may take a while.")))
+                                                                                         " File->Apply Changes to save. This may take a while.")))
+        self.help_menu.addAction(createAction("Adding Icons", lambda: QMessageBox.information(self, "Adding Icons", 
+                                                                                         "Pressing \"Add\" will prompt you for an image file.<br>" \
+                                                                                         "DSIE will then append the image to the current selected atlas," \
+                                                                                         " if possible.<br><br>Afterwards, go to" \
+                                                                                         " File->Apply Changes to save. This may take a while.")))
         self.help_menu.addAction(createAction("About", lambda: QMessageBox.information(self, "About", 
                                                                                        "Made by <a href='https://linktr.ee/aerolitesr'>Aero</a> :><br><br>")))
 
