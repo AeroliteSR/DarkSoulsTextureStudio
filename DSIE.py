@@ -22,8 +22,6 @@ from soulstruct.dcx import core, oodle, DCXType
 from GameInfo import Maps
 
 BLANK_PATH = Path('.')
-import constrata.binary_struct as bs
-_ = bs.ByteOrder.NativeAutoAligned
 
 class NaturalListItem(QListWidgetItem):
     def __init__(self, text):
