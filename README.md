@@ -47,6 +47,11 @@ The `Replace` button selects whichever texture you currently have in the preview
 for an image file. The image you selected is then patched into the atlas/icon within memory. Going to `File -> Apply Replacements` will then export your 
 changes as a tpf/dcx file, which should work as is. Some testing showed that Witchy seems to find the files to be agreeable.  
   
+Pressing `Add` will once again prompt you for an image, this time to append as a completely new entry. After giving your new subtexture a name, 
+DSIE will find free space in the atlas to place it, enlarging the image if it doesn't find any. For modern games, the subtexture will 
+automatically be added to the layout (.sblytbnd) file as well. For the older games, it will simply attempt to add a new tile, respecting the existing 
+grid dimensions. Currently doesn't work on unmapped, non-uniform atlases.  
+  
 Note: The high resolution versions of Elden Ring and Nightreigns's icons are stored in 00_solo(_h/l).tpfbdt which you can unpack with WitchyBND.  
 Be aware that opening this directory in DSIE will use a LOT of resources. (~3.4GB of RAM for ER and ~1.3GB for NR)  
 
