@@ -22,6 +22,8 @@ from soulstruct.dcx import core, oodle, DCXType
 from GameInfo import Maps
 
 BLANK_PATH = Path('.')
+import constrata.binary_struct as bs
+_ = bs.ByteOrder.NativeAutoAligned
 
 class NaturalListItem(QListWidgetItem):
     def __init__(self, text):
@@ -66,20 +68,23 @@ class Functions():
             binder = Binder(
                 version=BinderVersion.V4,
                 dcx_type=DCXType.DCX_KRAK,
-                v4_info=BinderVersion4Info.eldenring_default())  
+                v4_info=BinderVersion4Info.eldenring_default())
 
             for atlas in data:
-                filepath = atlas.get("imagePath").replace('png', 'layout')
+                atlas_path = atlas.get("imagePath").replace('.png', '')
+                atlas_subtextures = [sub for sub in to_add if sub.get("parent") == atlas_path]
 
-                Functions.addSubtexturesToAtlasLayout(atlas, to_add)
+                Functions.addSubtexturesToAtlasLayout(atlas, atlas_subtextures)
+
+            for atlas in data:
                 xml_bytes = ET.tostring(atlas, encoding='utf-8', method='xml')
-            
+                layout_path = atlas.get("imagePath").replace('png', 'layout')
                 entry = BinderEntry(
                     data=xml_bytes,
                     entry_id=binder.get_first_new_entry_id_in_range(0, 1000000),
-                    path=filepath,
+                    path=layout_path,
                     flags=0)
-
+                
                 binder.add_entry(entry=entry)
 
             binder.write(project_dir / "Output" / ".DCX Files" / output_name)
@@ -115,6 +120,10 @@ class Functions():
             name = sub.get('name')
             if not name.endswith('.png'):
                 name = f"{name}.png"
+
+            if any(child.get('name') == name for child in atlas):
+                print("Subtexture entry already exists in layout file. Skipping.")
+                continue
 
             item = ET.SubElement(atlas, "SubTexture", {
                 "name": name,
@@ -482,45 +491,68 @@ class ReplaceWorker(QObject):
 
     def run(self):
         try:
-            for dcx_path in set(list(self.replacements.keys()) + list(self.additions.keys())):
+            print("=== Building operations map ===")
+            dcx_ops = {}
+
+            for dcx_path, atlases in self.replacements.items():
                 base_name = Path(dcx_path).name
+                dcx_ops.setdefault(base_name, {})
+
+                for atlas_name, changes in atlases.items():
+                    dcx_ops[base_name].setdefault(atlas_name, {"replacements": {}, "additions": []})
+                    dcx_ops[base_name][atlas_name]["replacements"].update(changes)
+
+            for dcx_path, add_data in self.additions.items():
+                base_name = Path(dcx_path).name
+
+                if dcx_path in self.LAYOUT_FILES:
+                    print(f"Processing layout for: {base_name}")
+                    Functions.processLayout({dcx_path: add_data}, self.project_dir)
+
+                additions_by_atlas = {}
+                for sub in add_data["additions"]:
+                    if "parent" not in sub:
+                        continue
+                    atlas_name = sub["parent"]
+                    additions_by_atlas.setdefault(atlas_name, []).append(sub)
+
+                for atlas_name, subs in additions_by_atlas.items():
+                    dcx_ops.setdefault(base_name, {})
+                    dcx_ops[base_name].setdefault(atlas_name, {"replacements": {}, "additions": []})
+                    dcx_ops[base_name][atlas_name]["additions"].extend(subs)
+
+            print("\n=== Finished building operations ===")
+            print("Summary of DCX operations:")
+            for dcx_name, atlases in dcx_ops.items():
+                print(f"File: {dcx_name}")
+                for atlas_name, ops in atlases.items():
+                    rep_keys = list(ops['replacements'].keys())
+                    add_names = [sub['name'] for sub in ops['additions']]
+                    print(f"  Atlas: {atlas_name} | Replacements: {rep_keys} | Additions: {add_names}")
+
+
+            for base_name, atlases in dcx_ops.items():
                 base = deepcopy(self.LOADED_DCX_FILES[base_name])
                 atlas_cache = {}
 
-                if self.additions.get(dcx_path):
-                    add_data = self.additions[dcx_path]
-                    if dcx_path in self.LAYOUT_FILES:
-                        # Layout-based additions
-                        Functions.processLayout({dcx_path: add_data}, self.project_dir)
-                    else:
-                        # Standard atlas additions
-                        for sub in add_data["additions"]:
-                            atlas_name = sub["atlas_name"]
-                            if atlas_name not in atlas_cache:
-                                atlas_cache[atlas_name] = self.getPilImage(atlas_name).copy()
-                            atlas_img = atlas_cache[atlas_name]
+                for atlas_name, ops in atlases.items():
+                    if atlas_name not in atlas_cache:
+                        atlas_cache[atlas_name] = self.getPilImage(atlas_name).copy()
+                    atlas_img = atlas_cache[atlas_name]
 
-                            img = sub["img"]
-                            x, y = int(sub["x"]), int(sub["y"])
-                            atlas_img.paste(img, (x, y))
+                    for add in ops["additions"]:
+                        x, y = int(add["x"]), int(add["y"])
+                        atlas_img.paste(add["img"], (x, y))
+
+                    for sub_name, new_img in ops["replacements"].items():
+                        if sub_name:  # subtexture replacement
+                            st = self.subtextures.get(atlas_name, {}).get(sub_name)
+                            if not st:
+                                raise Exception(f"Could not resolve subtexture '{sub_name}' in atlas '{atlas_name}'")
+                            atlas_img.paste(new_img, (st["x"], st["y"]))
+                        else:  # full atlas replacement
+                            atlas_img = new_img.copy()
                             atlas_cache[atlas_name] = atlas_img
-
-                if self.replacements.get(dcx_path):
-                    atlases = self.replacements[dcx_path]
-                    for atlas_name, changes in atlases.items():
-                        if atlas_name not in atlas_cache:
-                            atlas_cache[atlas_name] = self.getPilImage(atlas_name).copy()
-                        atlas_img = atlas_cache[atlas_name]
-
-                        for sub_name, new_img in changes.items():
-                            if sub_name:  # subtexture replacement
-                                st = self.subtextures.get(atlas_name, {}).get(sub_name)
-                                if not st:
-                                    raise Exception(f"Could not resolve subtexture: {sub_name}")
-                                atlas_img.paste(new_img, (st["x"], st["y"]))
-                            else:  # full atlas replacement
-                                atlas_img = new_img
-                                atlas_cache[atlas_name] = atlas_img
 
                 for atlas_name, atlas_img in atlas_cache.items():
                     with NamedTemporaryFile(delete=False, suffix=".png") as tmp:
@@ -529,20 +561,21 @@ class ReplaceWorker(QObject):
                     try:
                         texture = tpf.TPF.find_texture_stem(base, atlas_name)
                         texture.replace_dds(temp_path)
+                        print(f"  Saved atlas '{atlas_name}' into DCX")
                     finally:
                         if os.path.exists(temp_path):
                             os.remove(temp_path)
 
                 writer = base.to_writer()
                 data = core.compress(bytes(writer), DCXType.DCX_KRAK)
-                
                 out_dir = self.project_dir / "Output" / ".DCX Files"
                 out_dir.mkdir(parents=True, exist_ok=True)
                 with open(out_dir / base_name, "wb") as f:
                     f.write(data)
 
             self.finished.emit(True, "All changes applied successfully!")
-        except Exception as e:
+
+        except Exception:
             import traceback
             self.finished.emit(False, traceback.format_exc())
 
@@ -760,6 +793,7 @@ class MainWindow(QMainWindow):
             sub = {
                 'img': img,
                 'name': name,
+                'parent': atlas_name,
                 'x': str(x),
                 'y': str(y),
                 'width': str(w),
@@ -1489,5 +1523,5 @@ def main():
 if __name__ == "__main__":
     main()
 
-# nuitka --standalone --onefile --windows-console-mode=disable --enable-plugin=pyside6 --windows-icon-from-ico=icon.ico --include-data-file=icon.ico=icon.ico --msvc=latest --lto=yes DSIE.py
+# nuitka --standalone --onefile --windows-console-mode=disable --enable-plugin=pyside6 --windows-icon-from-ico=icon.ico --include-data-file=icon.ico=icon.ico --include-data-file=soulstruct\base\textures\texconv.exe=soulstruct\base\textures\texconv.exe --include-module=constrata --include-module=soulstruct --msvc=latest --lto=yes DSIE.py
 # pyinstaller DSIE.py --noconsole --icon=icon.ico --add-data "icon.ico;." --add-binary "soulstruct/base/textures/texconv.exe;soulstruct/base/textures" --collect-data soulstruct
