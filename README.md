@@ -54,7 +54,9 @@ grid dimensions. Currently doesn't work on unmapped, non-uniform atlases.
   
 Note: The high resolution versions of Elden Ring and Nightreigns's icons are stored in 00_solo(_h/l).tpfbdt which you can unpack with WitchyBND.  
 Be aware that opening this directory in DSIE will use a LOT of resources. (~3.4GB of RAM for ER and ~1.3GB for NR)  
-
+  
+# Credits:
+A myriad thanks to Kmstr and Managarm for their suggestions, feedback and testing throughout development! :))  
 # Licensing and info:
 This project includes code from the SoulStruct library:  
 SoulStruct: https://github.com/Grimrukh/soulstruct  
