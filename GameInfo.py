@@ -11398,3 +11398,16 @@ class Maps():
               }
             }
               }
+
+class Types():
+    SubtexturePrefix = [
+        "MENU_Knowledge",
+        "MENU_ItemIcon",
+        "MENU_MAP",
+        "MENU_StatusIcon",
+        "MENU_SkillStory",
+        "MENU_ItemBase",
+        "MENU_SaveIcon",
+        "MENU_RE",
+        "MENU_Ch",
+    ]

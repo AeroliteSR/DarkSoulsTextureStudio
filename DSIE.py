@@ -11,15 +11,15 @@ from collections import defaultdict
 from enum import Enum, auto
 from PIL import Image, ImageDraw, UnidentifiedImageError
 # GUI
-from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QListWidget, QListWidgetItem, QCheckBox,
-QLabel, QHBoxLayout, QFileDialog, QPushButton, QMessageBox, QSplitter, QProgressDialog, QInputDialog, QLineEdit)
+from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QListWidget, QListWidgetItem, QCheckBox, QDialog,
+QLabel, QHBoxLayout, QFileDialog, QPushButton, QMessageBox, QSplitter, QProgressDialog, QInputDialog, QLineEdit, QComboBox)
 from PySide6.QtGui import QPixmap, QImage, QIcon, QDesktopServices, QAction
 from PySide6.QtCore import Qt, QObject, QThread, QUrl, Signal
 # Soulstruct
 from soulstruct.containers import tpf, Binder, BinderEntry, BinderVersion, BinderVersion4Info
 from soulstruct.dcx import core, oodle, DCXType
 # Custom
-from GameInfo import Maps
+from GameInfo import Maps, Types
 
 BLANK_PATH = Path('.')
 
@@ -476,6 +476,33 @@ class SearchWindow(QWidget):
         text = self.search_input.text()
         self.results.emit(text, self.atlas_search.isChecked())
 
+class TextureNamePrompt(QDialog):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Prompt")
+
+        layout = QVBoxLayout()
+
+        layout.addWidget(QLabel("Prefix:"))
+        self.prefix_input = QComboBox()
+        self.prefix_input.addItems(Types.SubtexturePrefix)
+        self.prefix_input.setEditable(True)
+        layout.addWidget(self.prefix_input)
+
+        layout.addWidget(QLabel("Icon ID:"))
+        self.id_input = QLineEdit()
+        layout.addWidget(self.id_input)
+
+        self.submit_button = QPushButton("Submit")
+        layout.addWidget(self.submit_button)
+
+        self.setLayout(layout)
+
+        self.submit_button.clicked.connect(self.accept)
+
+    def get_result(self):
+        return f"{self.prefix_input.currentText()}_{self.id_input.text()}"
+
 class ReplaceWorker(QObject):
     finished = Signal(bool, str)  # success, message
 
@@ -750,9 +777,12 @@ class MainWindow(QMainWindow):
         if not img_path or img_path == BLANK_PATH:
             return
         
-        name, ok = QInputDialog.getText(None, "Prompt", "Enter a name for your subtexture:")
-        if not ok:
+        dialog = TextureNamePrompt()
+        if dialog.exec():
+            name = dialog.get_result()
+        else:
             return
+
         if name in subs:
             self.showError("An icon of this name already exists!")
             return
