@@ -131,6 +131,8 @@ class Functions():
                 "height": sub.get('height'),
                 "half": "1"})
             
+            print(f"Adding Subtexture to {sub.get('parent')}:\n{ET.tostring(item, encoding='unicode')}")
+            
             if len(atlas) == 1:
                 atlas.text = '\r\n\t'
             else:
@@ -487,49 +489,51 @@ class ReplaceWorker(QObject):
         self.LOADED_DCX_FILES = loaded_files
         self.LAYOUT_FILES = layouts
 
+    def buildOperations(self):
+        print("Building operations map...")
+        dcx_ops = {}
+
+        for dcx_path, atlases in self.replacements.items():
+            base_name = Path(dcx_path).name
+            dcx_ops.setdefault(base_name, {})
+
+            for atlas_name, changes in atlases.items():
+                dcx_ops[base_name].setdefault(atlas_name, {"replacements": {}, "additions": []})
+                dcx_ops[base_name][atlas_name]["replacements"].update(changes)
+
+        for dcx_path, add_data in self.additions.items():
+            base_name = Path(dcx_path).name
+
+            if dcx_path in self.LAYOUT_FILES:
+                print(f"Processing layout for: {base_name}")
+                Functions.processLayout({dcx_path: add_data}, self.project_dir)
+
+            additions_by_atlas = {}
+            for sub in add_data["additions"]:
+                if "parent" not in sub:
+                    continue
+                atlas_name = sub["parent"]
+                additions_by_atlas.setdefault(atlas_name, []).append(sub)
+
+            for atlas_name, subs in additions_by_atlas.items():
+                dcx_ops.setdefault(base_name, {})
+                dcx_ops[base_name].setdefault(atlas_name, {"replacements": {}, "additions": []})
+                dcx_ops[base_name][atlas_name]["additions"].extend(subs)
+
+        print("\nFinished building operations.")
+        print("Summary of DCX operations:")
+        for dcx_name, atlases in dcx_ops.items():
+            print(f"File: {dcx_name}")
+            for atlas_name, ops in atlases.items():
+                rep_keys = list(ops['replacements'].keys())
+                add_names = [sub['name'] for sub in ops['additions']]
+                print(f"  Atlas: {atlas_name} | Replacements: {rep_keys if rep_keys != [None] else ['*Self*']} | Additions: {add_names}")
+
+        return dcx_ops
+
     def run(self):
         try:
-            print("=== Building operations map ===")
-            dcx_ops = {}
-
-            for dcx_path, atlases in self.replacements.items():
-                base_name = Path(dcx_path).name
-                dcx_ops.setdefault(base_name, {})
-
-                for atlas_name, changes in atlases.items():
-                    dcx_ops[base_name].setdefault(atlas_name, {"replacements": {}, "additions": []})
-                    dcx_ops[base_name][atlas_name]["replacements"].update(changes)
-
-            for dcx_path, add_data in self.additions.items():
-                base_name = Path(dcx_path).name
-
-                if dcx_path in self.LAYOUT_FILES:
-                    print(f"Processing layout for: {base_name}")
-                    Functions.processLayout({dcx_path: add_data}, self.project_dir)
-
-                additions_by_atlas = {}
-                for sub in add_data["additions"]:
-                    if "parent" not in sub:
-                        continue
-                    atlas_name = sub["parent"]
-                    additions_by_atlas.setdefault(atlas_name, []).append(sub)
-
-                for atlas_name, subs in additions_by_atlas.items():
-                    dcx_ops.setdefault(base_name, {})
-                    dcx_ops[base_name].setdefault(atlas_name, {"replacements": {}, "additions": []})
-                    dcx_ops[base_name][atlas_name]["additions"].extend(subs)
-
-            print("\n=== Finished building operations ===")
-            print("Summary of DCX operations:")
-            for dcx_name, atlases in dcx_ops.items():
-                print(f"File: {dcx_name}")
-                for atlas_name, ops in atlases.items():
-                    rep_keys = list(ops['replacements'].keys())
-                    add_names = [sub['name'] for sub in ops['additions']]
-                    print(f"  Atlas: {atlas_name} | Replacements: {rep_keys} | Additions: {add_names}")
-
-
-            for base_name, atlases in dcx_ops.items():
+            for base_name, atlases in self.buildOperations().items():
                 base = deepcopy(self.LOADED_DCX_FILES[base_name])
                 atlas_cache = {}
 
@@ -559,7 +563,6 @@ class ReplaceWorker(QObject):
                     try:
                         texture = tpf.TPF.find_texture_stem(base, atlas_name)
                         texture.replace_dds(temp_path)
-                        print(f"  Saved atlas '{atlas_name}' into DCX")
                     finally:
                         if os.path.exists(temp_path):
                             os.remove(temp_path)
@@ -935,6 +938,8 @@ class MainWindow(QMainWindow):
 
         if not dirmode:
             file_path = Path(QFileDialog.getOpenFileName(self, "Select DCX file", "", "DCX Files (*.dcx);;TPF Files (*.tpf)")[0])
+            if not file_path or file_path == BLANK_PATH:
+                return
             files = [file_path] if file_path else []
         else:
             dir_path = Path(QFileDialog.getExistingDirectory(self, "Select Folder"))
