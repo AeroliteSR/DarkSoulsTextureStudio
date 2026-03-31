@@ -929,6 +929,8 @@ class MainWindow(QMainWindow):
         self.current_crop = None
         self.current_atlas = None
         self.thumbnail_cache = {}
+        self.pending_additions = {}
+        self.pending_replacements = {}
         self.preview_label.setText("Select an atlas or subtexture")
         self.info_label.setText("Image info will appear here")
 
