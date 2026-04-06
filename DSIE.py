@@ -22,6 +22,13 @@ from soulstruct.dcx import core, oodle, DCXType
 from GameInfo import Maps, Types
 
 BLANK_PATH = Path('.')
+ROOTS = {
+        "Sekiro": Path(r"N:\NTC\data\Menu\ScaleForm\SBLayout\01_Common"),
+
+        "Elden Ring": Path(r"N:\GR\data\Menu\ScaleForm\SBLayout\01_Common"),
+
+        "Nightreign": Path(r"W:\CL\data\Target\INTERROOT_win64\menu\ScaleForm\Tif"),
+    }
 
 class NaturalListItem(QListWidgetItem):
     def __init__(self, text):
@@ -55,9 +62,28 @@ class Game():
     def __repr__(self):
         return f"Game({self.name}, {self.type.name})"
 
+class ResFormat(Enum):
+    NIGHTREIGN = ("Nightreign", {"H": "High", "L": "Low"})
+    ELDEN_RING = ("Elden Ring", {"H": "Hi", "L": "Low"})
+    SEKIRO = ("Sekiro", {"H": "Hi", "L": "Low"})
+
+    def __init__(self, game_name: str, mapping: dict[str, str]):
+        self.game_name = game_name
+        self.mapping = mapping
+
+    def get(self, res: str) -> str:
+        return self.mapping.get(res, res)
+
+    @classmethod
+    def from_name(cls, name: str):
+        for g in cls:
+            if g.game_name == name:
+                return g
+        raise ValueError(f"Unknown game: {name}")
+
 class Functions():
     @staticmethod
-    def processLayout(queue, project_dir):
+    def processLayout(queue, project_dir, game: Game, base_name, format_mode):
         for _, additions in queue.items():
             data = additions['data']
             to_add = additions['additions']
@@ -67,21 +93,24 @@ class Functions():
                 version=BinderVersion.V4,
                 dcx_type=DCXType.DCX_KRAK,
                 v4_info=BinderVersion4Info.eldenring_default())
+            
+            _format = ResFormat.from_name(game.name)
+            root = ROOTS.get(game.name, "") / base_name / _format.get(format_mode)
 
             for atlas in data:
-                atlas_path = atlas.get("imagePath").replace('.png', '')
-                atlas_subtextures = [sub for sub in to_add if sub.get("parent") == atlas_path]
+                atlas_path = Functions.replaceTerms(atlas.get("imagePath"), {'.png': '', '.tif': ''})
+                atlas_subtextures = [sub for sub in to_add if sub.get("parent") in atlas_path]
 
                 Functions.addSubtexturesToAtlasLayout(atlas, atlas_subtextures)
 
             for atlas in data:
-                xml_bytes = ET.tostring(atlas, encoding='utf-8', method='xml')
-                layout_path = atlas.get("imagePath").replace('png', 'layout')
+                xml_bytes = ET.tostring(atlas, encoding='utf-8', method='xml', )
+                layout_path = Functions.replaceTerms(atlas.get("imagePath"), {'.png': '.layout', '.tif': '.layout'})
                 entry = BinderEntry(
                     data=xml_bytes,
                     entry_id=binder.get_first_new_entry_id_in_range(0, 1000000),
-                    path=layout_path,
-                    flags=0)
+                    path=str(root / layout_path),
+                    flags=0x2)
                 
                 binder.add_entry(entry=entry)
 
@@ -129,7 +158,7 @@ class Functions():
                 "y": sub.get('y'),
                 "width": sub.get('width'),
                 "height": sub.get('height'),
-                "half": "1"})
+                "half": sub.get('half')})
             
             print(f"Adding Subtexture to {sub.get('parent')}:\n{ET.tostring(item, encoding='unicode')}")
             
@@ -493,6 +522,9 @@ class TextureNamePrompt(QDialog):
         self.id_input = QLineEdit()
         layout.addWidget(self.id_input)
 
+        self.half_checkbox = QCheckBox("Half")
+        layout.addWidget(self.half_checkbox)
+
         self.submit_button = QPushButton("Submit")
         layout.addWidget(self.submit_button)
 
@@ -501,12 +533,12 @@ class TextureNamePrompt(QDialog):
         self.submit_button.clicked.connect(self.accept)
 
     def get_result(self):
-        return f"{self.prefix_input.currentText()}_{self.id_input.text()}"
+        return f"{self.prefix_input.currentText()}_{self.id_input.text()}", self.half_checkbox.isChecked()
 
 class ReplaceWorker(QObject):
     finished = Signal(bool, str)  # success, message
 
-    def __init__(self, replacements, additions, subtextures, loaded_files, layouts, getPilImage, project_dir):
+    def __init__(self, replacements, additions, subtextures, loaded_files, layouts, getPilImage, project_dir, game, resolutions):
         super().__init__()
         self.replacements = replacements
         self.additions = additions
@@ -515,6 +547,8 @@ class ReplaceWorker(QObject):
         self.project_dir = project_dir
         self.LOADED_DCX_FILES = loaded_files
         self.LAYOUT_FILES = layouts
+        self.game = game
+        self.RESOLUTIONS = resolutions
 
     def buildOperations(self):
         print("Building operations map...")
@@ -533,7 +567,8 @@ class ReplaceWorker(QObject):
 
             if dcx_path in self.LAYOUT_FILES:
                 print(f"Processing layout for: {base_name}")
-                Functions.processLayout({dcx_path: add_data}, self.project_dir)
+                lyt_name = Functions.replaceTerms(base_name.split('.')[0], {"_h": "", "_l": ""}) if self.game.name == 'Nightreign' else ""
+                Functions.processLayout({dcx_path: add_data}, self.project_dir, self.game, lyt_name, format_mode=self.RESOLUTIONS.get(lyt_name, "H"))
 
             additions_by_atlas = {}
             for sub in add_data["additions"]:
@@ -622,6 +657,7 @@ class MainWindow(QMainWindow):
         self.thumbnail_cache = {}
         self.pending_replacements = {}
         self.pending_additions = {}
+        self.RESOLUTIONS = {}
 
         container = QWidget()
         layout = QHBoxLayout(container)
@@ -779,7 +815,7 @@ class MainWindow(QMainWindow):
         
         dialog = TextureNamePrompt()
         if dialog.exec():
-            name = dialog.get_result()
+            name, half = dialog.get_result()
         else:
             return
 
@@ -828,7 +864,8 @@ class MainWindow(QMainWindow):
                 'x': str(x),
                 'y': str(y),
                 'width': str(w),
-                'height': str(h)
+                'height': str(h),
+                'half': str(int(half))
             }
 
 
@@ -931,6 +968,7 @@ class MainWindow(QMainWindow):
         self.thumbnail_cache = {}
         self.pending_additions = {}
         self.pending_replacements = {}
+        self.RESOLUTIONS = {}
         self.preview_label.setText("Select an atlas or subtexture")
         self.info_label.setText("Image info will appear here")
 
@@ -1053,6 +1091,8 @@ class MainWindow(QMainWindow):
 
             file_mappings.extend(standalone) # no layout
 
+            self.RESOLUTIONS[prefix] = choice
+
         elif self.game.name in ['Sekiro', 'Elden Ring']:
             for f in files:
                 if 'sblytbnd' in str(f):
@@ -1077,6 +1117,8 @@ class MainWindow(QMainWindow):
                     file_mappings.append({"file": f, "layout": layout})
                 else:
                     file_mappings.append(f)
+
+                self.RESOLUTIONS[base_name] = "L" if "\\low\\" in str(f) else "H"
         else:
             file_mappings = files
 
@@ -1352,7 +1394,7 @@ class MainWindow(QMainWindow):
         self.replace_dialog.setStyleSheet("""QLabel {qproperty-alignment: AlignCenter;} QProgressBar {text-align: center;}""")
 
         self.r_thread = QThread()
-        self.r_worker = ReplaceWorker(self.pending_replacements, self.pending_additions, self.subtextures, self.LOADED_DCX_FILES, self.LAYOUT_FILES, self.getPilImage, self.project_dir)
+        self.r_worker = ReplaceWorker(self.pending_replacements, self.pending_additions, self.subtextures, self.LOADED_DCX_FILES, self.LAYOUT_FILES, self.getPilImage, self.project_dir, self.game, self.RESOLUTIONS)
         self.r_worker.moveToThread(self.r_thread)
         self.r_thread.started.connect(self.r_worker.run)
 
