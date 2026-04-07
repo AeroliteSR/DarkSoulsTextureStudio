@@ -12,9 +12,9 @@ from enum import Enum, auto
 from PIL import Image, ImageDraw, UnidentifiedImageError
 # GUI
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QListWidget, QListWidgetItem, QCheckBox, QDialog,
-QLabel, QHBoxLayout, QFileDialog, QPushButton, QMessageBox, QSplitter, QProgressDialog, QInputDialog, QLineEdit, QComboBox)
+QLabel, QHBoxLayout, QFileDialog, QPushButton, QMessageBox, QSplitter, QProgressDialog, QInputDialog, QLineEdit, QComboBox, QMenu)
 from PySide6.QtGui import QPixmap, QImage, QIcon, QDesktopServices, QAction
-from PySide6.QtCore import Qt, QObject, QThread, QUrl, Signal
+from PySide6.QtCore import Qt, QObject, QThread, QUrl, Signal, QPoint
 # Soulstruct
 from soulstruct.containers import tpf, Binder, BinderEntry, BinderVersion, BinderVersion4Info
 from soulstruct.dcx import core, oodle, DCXType
@@ -45,6 +45,11 @@ class ExportMode(Enum):
 class GameType(Enum):
     OLD = auto()
     MODERN = auto()
+
+class Modified(Enum):
+    FALSE = auto()
+    ADDED = auto()
+    REPLACED = auto()
 
 class Game():
     OLD_GAMES = {"Dark Souls 1", "Dark Souls 2", "Dark Souls 3"}
@@ -459,7 +464,7 @@ class ExtractWorker(QObject):
 
             else:
                 atlas_img = self.pilLoader(atlas_name=atlas_name)
-                percent = int(i / total * 100)
+                percent = int(i / total * 100 - 1)
 
                 if self.mode == ExportMode.ATLAS:
                     out_path = self.output_dir / '.Atlases'
@@ -506,8 +511,9 @@ class SearchWindow(QWidget):
         self.results.emit(text, self.atlas_search.isChecked())
 
 class TextureNamePrompt(QDialog):
-    def __init__(self):
+    def __init__(self, halfprompt=True):
         super().__init__()
+        self.halfprompt = halfprompt
         self.setWindowTitle("Prompt")
 
         layout = QVBoxLayout()
@@ -522,8 +528,9 @@ class TextureNamePrompt(QDialog):
         self.id_input = QLineEdit()
         layout.addWidget(self.id_input)
 
-        self.half_checkbox = QCheckBox("Half")
-        layout.addWidget(self.half_checkbox)
+        if self.halfprompt:
+            self.half_checkbox = QCheckBox("Half")
+            layout.addWidget(self.half_checkbox)
 
         self.submit_button = QPushButton("Submit")
         layout.addWidget(self.submit_button)
@@ -533,7 +540,15 @@ class TextureNamePrompt(QDialog):
         self.submit_button.clicked.connect(self.accept)
 
     def get_result(self):
-        return f"{self.prefix_input.currentText()}_{self.id_input.text()}", self.half_checkbox.isChecked()
+        if self.halfprompt:
+            half = self.half_checkbox.isChecked()
+        else:
+            half = False
+
+        id = self.id_input.text()
+        if not id.isdigit() or not 0 <= int(id) < 65536:
+            MainWindow.showError(None, "Inputted ID is not an asserted UInt16.\nThis may silently throw errors in Smithbox or elsewhere.\nRename this icon if that wasn't your intention.", "Warning", QMessageBox.Warning)
+        return f"{self.prefix_input.currentText()}_{id}", half
 
 class ReplaceWorker(QObject):
     finished = Signal(bool, str)  # success, message
@@ -665,12 +680,14 @@ class MainWindow(QMainWindow):
 
         self.atlas_list = QListWidget()
         self.atlas_list.currentItemChanged.connect(self.showAtlas)
-        self.atlas_list.itemClicked.connect(self.showAtlas)
+        #self.atlas_list.itemClicked.connect(self.showAtlas)
         splitter.addWidget(self.atlas_list)
 
         self.subtexture_list = QListWidget()
         self.subtexture_list.currentItemChanged.connect(self.showSubtexture)
-        self.subtexture_list.itemClicked.connect(self.showSubtexture)
+        #self.subtexture_list.itemClicked.connect(self.showSubtexture)
+        self.subtexture_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.subtexture_list.customContextMenuRequested.connect(self.openSubtextureMenu)
         splitter.addWidget(self.subtexture_list)
 
         right_panel = QWidget()
@@ -791,6 +808,96 @@ class MainWindow(QMainWindow):
                                                                                          " File->Apply Changes to save. This may take a while.")))
         self.help_menu.addAction(createAction("About", lambda: QMessageBox.information(self, "About", 
                                                                                        "Made by <a href='https://linktr.ee/aerolitesr'>Aero</a> :><br><br>")))
+
+    def openSubtextureMenu(self, position: QPoint):
+        item = self.subtexture_list.itemAt(position)
+        if item is None:
+            return
+        
+        current = self.atlas_list.currentItem()
+        atlas_name = current.data(Qt.UserRole)
+        dcx_file = current.data(Qt.UserRole+1)
+        sub_name = item.data(Qt.UserRole)
+
+        if self.isModified(dcx_file, atlas_name, sub_name) != Modified.ADDED:
+            return # return on vanilla items, no reason to edit them
+
+        self.subtexture_list.setCurrentItem(item)
+
+        menu = QMenu()
+
+        delete_action = QAction("Delete", self)
+        delete_action.triggered.connect(lambda: self.deleteSubtexture(item))
+
+        rename_action = QAction("Rename", self)
+        rename_action.triggered.connect(lambda: self.renameSubtexture(item))
+
+        menu.addAction(delete_action)
+        menu.addAction(rename_action)
+
+        menu.exec(self.subtexture_list.viewport().mapToGlobal(position))
+
+    def deleteSubtexture(self, sub_item):
+        """Delete a subtexture, update dicts."""
+        atlas_item = self.atlas_list.currentItem()
+        if not atlas_item or not sub_item:
+            return
+        
+        atlas_name = atlas_item.data(Qt.UserRole)
+        dcx_file = atlas_item.data(Qt.UserRole+1)
+        sub_name = sub_item.data(Qt.UserRole)
+
+        if atlas_name in self.subtextures and sub_name in self.subtextures[atlas_name]:
+            del self.subtextures[atlas_name][sub_name]
+
+        print(self.pending_additions)
+        for _, info in list(self.pending_additions.items()):
+            additions = info.get("additions", [])
+            info["additions"] = [a for a in additions if a.get("name") != sub_name]
+            if len(info['additions']) == 0:
+                del self.pending_additions[dcx_file.name]
+        print(self.pending_additions)
+
+        if atlas_name in self.thumbnail_cache:
+            del self.thumbnail_cache[atlas_name]
+
+        items = [self.subtexture_list.item(i) for i in range(self.subtexture_list.count())]
+        if all(self.isModified(dcx_file, atlas_name, item.data(Qt.UserRole)) == Modified.FALSE for item in items):
+            atlas_item.setForeground(Qt.white)
+
+        self.subtexture_list.takeItem(self.subtexture_list.row(sub_item))
+        self.showAtlas(atlas_item)
+
+    def renameSubtexture(self, sub_item):
+        """Rename a subtexture and update all relevant dicts."""
+        atlas_item = self.atlas_list.currentItem()
+        if not atlas_item or not sub_item:
+            return
+
+        atlas_name = atlas_item.data(Qt.UserRole)
+        old_name = sub_item.data(Qt.UserRole)
+
+        dialog = TextureNamePrompt(halfprompt=False)
+        if not dialog.exec():
+            return
+        new_name, _ = dialog.get_result()
+
+        if new_name in self.subtextures.get(atlas_name, {}):
+            self.showError(f"A subtexture named '{new_name}' already exists!")
+            return
+
+        self.subtextures[atlas_name][new_name] = self.subtextures[atlas_name].pop(old_name)
+
+        for _, info in self.pending_additions.items():
+            additions = info.get("additions", [])
+            for a in additions:
+                if a.get("name") == old_name:
+                    a["name"] = new_name
+
+        sub_item.setText(new_name)
+        sub_item.setData(Qt.UserRole, new_name)
+
+        self.showSubtexture(sub_item)
 
     def addIcon(self):
         if self.atlas_list.count() == 0:
@@ -941,11 +1048,11 @@ class MainWindow(QMainWindow):
 
             self.showAtlas(atlas)
             
-    def showError(self, text):
+    def showError(self, text, title="Error", _type=QMessageBox.Critical):
         """Error popup with specified text"""
         msg = QMessageBox()
-        msg.setIcon(QMessageBox.Critical)
-        msg.setWindowTitle("Error") 
+        msg.setIcon(_type)
+        msg.setWindowTitle(title) 
         msg.setText(text) 
         msg.exec() 
 
@@ -1182,6 +1289,7 @@ class MainWindow(QMainWindow):
         self.progress_dialog.setWindowTitle("Exporting")
         self.progress_dialog.setWindowModality(Qt.ApplicationModal)
         self.progress_dialog.show()
+        QApplication.processEvents()
 
         thread = QThread(self)
         worker = ExtractWorker(self.atlases, self.subtextures, output_dir, loader=self.getPilImage, tasks=tasks, mode=mode, filetype=filetype)
@@ -1466,11 +1574,11 @@ class MainWindow(QMainWindow):
 
     def isModified(self, dcx_file, atlas_name, sub_name=None):
         """Returns True if subtexture has been modified, for recoloring its entry."""
-        dcx_name = Path(dcx_file).name
-        is_replace = sub_name in self.pending_replacements.get(dcx_name, {}).get(atlas_name, {})
-        is_add = any(sub_name == i['name'] for i in self.pending_additions.get(dcx_name, {}).get('additions', []))
-
-        return is_replace or is_add
+        if sub_name in self.pending_replacements.get(Path(dcx_file), {}).get(atlas_name, {}):
+            return Modified.REPLACED
+        if any(sub_name == i['name'] for i in self.pending_additions.get(Path(dcx_file).name, {}).get('additions', [])):
+            return Modified.ADDED
+        return Modified.FALSE
 
     def showAtlas(self, current):
         """Display the selected atlas, and load all subtextures to the list."""
@@ -1480,6 +1588,7 @@ class MainWindow(QMainWindow):
         dcx_file = current.data(Qt.UserRole+1)
         self.current_atlas = atlas_name
         self.current_crop = None
+        atlas_modified = False
 
         atlas_img = self.getPilImage(atlas_name, createDebug=self.btn_atlasGrid.isChecked())
         preview_img = atlas_img.copy()
@@ -1497,12 +1606,17 @@ class MainWindow(QMainWindow):
             item = NaturalListItem(key)
             item.setData(Qt.UserRole, key)
 
-            if self.isModified(dcx_file, atlas_name, key):
-                current.setForeground(Qt.yellow)
+            modify = self.isModified(dcx_file, atlas_name, key)
+            if modify == Modified.REPLACED:
                 item.setForeground(Qt.yellow)
+                atlas_modified = True
+            if modify == Modified.ADDED:
+                item.setForeground(Qt.green)
+                atlas_modified = True
 
             self.subtexture_list.addItem(item)
-
+        
+        current.setForeground(Qt.yellow if atlas_modified else Qt.white)
         self.subtexture_list.blockSignals(False)
         self.subtexture_list.sortItems()
 
