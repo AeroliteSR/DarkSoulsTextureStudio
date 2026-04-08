@@ -10,6 +10,7 @@ from pathlib import Path
 from collections import defaultdict
 from enum import Enum, auto
 from PIL import Image, ImageDraw, UnidentifiedImageError
+from datetime import datetime
 # GUI
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QListWidget, QListWidgetItem, QCheckBox, QDialog,
 QLabel, QHBoxLayout, QFileDialog, QPushButton, QMessageBox, QSplitter, QProgressDialog, QInputDialog, QLineEdit, QComboBox, QMenu)
@@ -646,7 +647,7 @@ class ReplaceWorker(QObject):
 
                 writer = base.to_writer()
                 data = core.compress(bytes(writer), DCXType.DCX_KRAK)
-                out_dir = self.project_dir / "Output" / ".DCX Files"
+                out_dir = self.project_dir / "Output" / ".DCX Files" / datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
                 out_dir.mkdir(parents=True, exist_ok=True)
                 with open(out_dir / base_name, "wb") as f:
                     f.write(data)
