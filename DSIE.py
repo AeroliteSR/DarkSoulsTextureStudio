@@ -816,10 +816,12 @@ class MainWindow(QMainWindow):
         
         current = self.atlas_list.currentItem()
         atlas_name = current.data(Qt.UserRole)
-        dcx_file = current.data(Qt.UserRole+1)
+        dcx_file = Path(current.data(Qt.UserRole+1)).name
         sub_name = item.data(Qt.UserRole)
 
-        if self.isModified(dcx_file, atlas_name, sub_name) != Modified.ADDED:
+        #print(dcx_file, atlas_name, sub_name)
+        modify = self.isModified(dcx_file, atlas_name, sub_name)
+        if modify == Modified.FALSE:
             return # return on vanilla items, no reason to edit them
 
         self.subtexture_list.setCurrentItem(item)
@@ -832,8 +834,14 @@ class MainWindow(QMainWindow):
         rename_action = QAction("Rename", self)
         rename_action.triggered.connect(lambda: self.renameSubtexture(item))
 
-        menu.addAction(delete_action)
-        menu.addAction(rename_action)
+        revert_action = QAction("Revert", self)
+        revert_action.triggered.connect(lambda: self.revertSubtexture(item))
+
+        if modify == Modified.ADDED:
+            menu.addAction(delete_action)
+            menu.addAction(rename_action)
+        elif modify == Modified.REPLACED:
+            menu.addAction(revert_action)
 
         menu.exec(self.subtexture_list.viewport().mapToGlobal(position))
 
@@ -844,22 +852,19 @@ class MainWindow(QMainWindow):
             return
         
         atlas_name = atlas_item.data(Qt.UserRole)
-        dcx_file = atlas_item.data(Qt.UserRole+1)
+        dcx_file = Path(atlas_item.data(Qt.UserRole+1)).name
         sub_name = sub_item.data(Qt.UserRole)
 
         if atlas_name in self.subtextures and sub_name in self.subtextures[atlas_name]:
             del self.subtextures[atlas_name][sub_name]
 
-        print(self.pending_additions)
         for _, info in list(self.pending_additions.items()):
             additions = info.get("additions", [])
             info["additions"] = [a for a in additions if a.get("name") != sub_name]
             if len(info['additions']) == 0:
-                del self.pending_additions[dcx_file.name]
-        print(self.pending_additions)
+                del self.pending_additions[dcx_file]
 
-        if atlas_name in self.thumbnail_cache:
-            del self.thumbnail_cache[atlas_name]
+        self.rebuildAtlas(atlas_name, dcx_file)
 
         items = [self.subtexture_list.item(i) for i in range(self.subtexture_list.count())]
         if all(self.isModified(dcx_file, atlas_name, item.data(Qt.UserRole)) == Modified.FALSE for item in items):
@@ -894,8 +899,47 @@ class MainWindow(QMainWindow):
                 if a.get("name") == old_name:
                     a["name"] = new_name
 
+        dcx_file = Path(atlas_item.data(Qt.UserRole+1)).name
+
+        repls = self.pending_replacements.get(dcx_file, {}).get(atlas_name, {})
+        if old_name in repls:
+            repls[new_name] = repls.pop(old_name)
+
         sub_item.setText(new_name)
         sub_item.setData(Qt.UserRole, new_name)
+
+        self.showSubtexture(sub_item)
+
+    def revertSubtexture(self, sub_item):
+        atlas_item = self.atlas_list.currentItem()
+        if not atlas_item or not sub_item:
+            return
+
+        atlas_name = atlas_item.data(Qt.UserRole)
+        dcx_file = Path(atlas_item.data(Qt.UserRole+1)).name
+        sub_name = sub_item.data(Qt.UserRole)
+
+        repls_for_file = self.pending_replacements.get(dcx_file)
+        if not repls_for_file:
+            return
+
+        atlas_repls = repls_for_file.get(atlas_name)
+        if not atlas_repls or sub_name not in atlas_repls:
+            return
+
+        del atlas_repls[sub_name]
+
+        if not atlas_repls:
+            del repls_for_file[atlas_name]
+        if not repls_for_file:
+            del self.pending_replacements[dcx_file]
+
+        self.rebuildAtlas(atlas_name, dcx_file)
+        sub_item.setForeground(Qt.white)
+
+        items = [self.subtexture_list.item(i) for i in range(self.subtexture_list.count())]
+        if all(self.isModified(dcx_file, atlas_name, item.data(Qt.UserRole)) == Modified.FALSE for item in items):
+            atlas_item.setForeground(Qt.white)
 
         self.showSubtexture(sub_item)
 
@@ -903,150 +947,74 @@ class MainWindow(QMainWindow):
         if self.atlas_list.count() == 0:
             self.showError('No atlases loaded!')
             return
-        
-        atlas = self.atlas_list.currentItem()
-        atlas_name = atlas.data(Qt.UserRole)
-        dcx_file = Path(atlas.data(Qt.UserRole+1)).name
 
-        if not atlas:
+        atlas_item = self.atlas_list.currentItem()
+        if not atlas_item:
             self.showError('No atlas loaded!')
             return
+
+        atlas_name = atlas_item.data(Qt.UserRole)
+        dcx_file = Path(atlas_item.data(Qt.UserRole+1)).name
+
         subs = self.subtextures.get(atlas_name, {})
         if not subs:
             self.showError("This atlas isn't mapped, sorry!")
             return
 
         img_path = Path(QFileDialog.getOpenFileName(self, "Select Image", "", "Image Files (*.png *.dds *.jpg *.webm *.jpeg);;All Files (*.*)")[0])
+
         if not img_path or img_path == BLANK_PATH:
             return
-        
+
         dialog = TextureNamePrompt()
-        if dialog.exec():
-            name, half = dialog.get_result()
-        else:
+        if not dialog.exec():
             return
+
+        name, half = dialog.get_result()
 
         if name in subs:
             self.showError("An icon of this name already exists!")
             return
 
-        if dcx_file in self.LAYOUT_FILES: # Modern games, handle layouts
-            atlas_img = self.getPilImage(atlas_name)
-            padding = 2
+        img = Image.open(img_path).convert('RGBA')
+        w, h = img.size
 
-            img = Image.open(img_path).convert('RGBA')
-            w, h = img.size
-            
-            used_rects = []
-            for st in self.subtextures[atlas_name].values():
-                used_rects.append((
-                    st["x"] - padding,
-                    st["y"] - padding,
-                    st["x"] + st["width"] + padding,
-                    st["y"] + st["height"] + padding))
-                
-            pos = Functions.getFreeSpace(atlas_img.size, used_rects, w, h, padding=padding)
-            if pos:
-                x, y = pos
-            else:
-                print('No free space found, extending atlas.')
+        atlas_img = self.getPilImage(atlas_name)
 
-                atlas_w, atlas_h = atlas_img.size
-                x = 0
-                y = atlas_h + padding
+        padding = 2
+        used_rects = [(st["x"] - padding, st["y"] - padding, st["x"] + st["width"] + padding, st["y"] + st["height"] + padding) for st in subs.values()]
 
-                new_height = atlas_h + img.height + padding
-                new_atlas = Image.new("RGBA", (atlas_w, new_height), (0,0,0,0))
-                new_atlas.paste(atlas_img, (0,0))
-                atlas_img = new_atlas
+        pos = Functions.getFreeSpace(atlas_img.size, used_rects, w, h, padding=padding)
 
-            atlas_img.paste(img, (x, y))
-            self.thumbnail_cache[atlas_name] = atlas_img
-            self.subtextures[atlas_name][name] = {'blank': False, 'height': h, 'width': w, 'x': x, 'y': y}
-
-            sub = {
-                'img': img,
-                'name': name,
-                'parent': atlas_name,
-                'x': str(x),
-                'y': str(y),
-                'width': str(w),
-                'height': str(h),
-                'half': str(int(half))
-            }
-
-
-            if not self.pending_additions.get(dcx_file, None):
-                out_name = dcx_file.replace('.tpf', '.sblytbnd')
-                data = self.LAYOUT_FILES[dcx_file]
-                self.pending_additions[dcx_file] = {
-                                                    "data": data,
-                                                    "additions": [sub],
-                                                    "output": out_name}
-            else:
-                self.pending_additions[dcx_file]['additions'].append(sub)
-
-            self.showAtlas(atlas)
-
+        if pos:
+            x, y = pos
         else:
-            atlas_img = self.getPilImage(atlas_name).copy()
-            img = Image.open(img_path).convert('RGBA')
+            x = 0
+            y = atlas_img.size[1] + padding
 
-            dimensions = Maps.TextureDimensions[self.game.name].get(atlas_name)
-            cell_w, cell_h = dimensions["width"], dimensions["height"]
+        sub = {
+            'img': img,
+            'name': name,
+            'parent': atlas_name,
+            'x': str(x),
+            'y': str(y),
+            'width': str(w),
+            'height': str(h),
+            'half': str(int(half))
+        }
 
-            img = img.resize((cell_w, cell_h), Image.Resampling.LANCZOS)
+        self.pending_additions.setdefault(dcx_file, {
+            "data": self.LAYOUT_FILES.get(dcx_file),
+            "additions": [],
+            "output": dcx_file.replace('.tpf', '.sblytbnd')
+        })
 
-            target_name = None
-            target_st = None
+        self.pending_additions[dcx_file]["additions"].append(sub)
 
-            for sub_name, st in self.subtextures.get(atlas_name).items():
-                if st.get("blank"):
-                    target_name = sub_name
-                    target_st = st
-                    del self.subtextures[atlas_name][sub_name]
-                    break
+        self.subtextures.setdefault(atlas_name, {})[name] = {'x': x, 'y': y, 'width': w, 'height': h, 'blank': False}
 
-            if not target_st: # create new row if blank slot isnt found
-                atlas_w, atlas_h = atlas_img.size
-
-                rows = atlas_h // cell_h
-
-                x = 0
-                y = rows * cell_h
-
-                new_height = atlas_h + cell_h
-                new_atlas = Image.new("RGBA", (atlas_w, new_height), (0, 0, 0, 0))
-                new_atlas.paste(atlas_img, (0, 0))
-                atlas_img = new_atlas
-
-                target_st = {
-                    "x": x,
-                    "y": y,
-                    "width": cell_w,
-                    "height": cell_h,
-                    "blank": False
-                }
-
-                target_name = name
-                self.subtextures[atlas_name][target_name] = target_st
-
-            else: # use a blank slot
-                target_st["blank"] = False
-                target_name = name
-                self.subtextures[atlas_name][target_name] = target_st
-
-            atlas_img.paste(img, (target_st["x"], target_st["y"]))
-            self.thumbnail_cache[atlas_name] = atlas_img
-
-            if dcx_file not in self.pending_replacements:
-                self.pending_replacements[dcx_file] = {}
-            if atlas_name not in self.pending_replacements[dcx_file]:
-                self.pending_replacements[dcx_file][atlas_name] = {}
-
-            self.pending_replacements[dcx_file][atlas_name][target_name] = img
-
-            self.showAtlas(atlas)
+        self.rebuildAtlas(atlas_name, dcx_file)
+        self.showAtlas(atlas_item)
             
     def showError(self, text, title="Error", _type=QMessageBox.Critical):
         """Error popup with specified text"""
@@ -1398,13 +1366,18 @@ class MainWindow(QMainWindow):
         self.searchInstance.results.connect(handle_search)
         self.searchInstance.show()
 
-    def getGridSubtexture(self, atlas_name, sub_name, atlas_img):
-        """Returns (x, y, width, height) for atlases that don't use layouts. Aka from older games."""
+    def resolveSubtexture(self, atlas_name, sub_name, atlas_img):
+        """Return subtexture rect from either layout or grid system."""
+
+        st = self.subtextures.get(atlas_name, {}).get(sub_name)
+        if st:
+            return st
+
         texmap = Maps.TextureDimensions[self.game.name]
-        dimensions = texmap.get(atlas_name, None)
+        dimensions = texmap.get(atlas_name)
 
         if not dimensions:
-            return None  # no mapping available
+            return None
 
         tile_w = dimensions['width']
         tile_h = dimensions['height']
@@ -1420,51 +1393,44 @@ class MainWindow(QMainWindow):
         row = idx // tiles_per_row
         col = idx % tiles_per_row
 
-        x = col * tile_w
-        y = row * tile_h
-
-        return {"x": x, "y": y, "width": tile_w, "height": tile_h}
+        return {
+            "x": col * tile_w,
+            "y": row * tile_h,
+            "width": tile_w,
+            "height": tile_h}
 
     def queueReplacement(self, dcx_file: Path, atlas_item, sub_item, img_path: Path):
-        """Process selection for replacement and add it to the queue."""
         atlas_name = atlas_item.data(Qt.UserRole)
+        dcx_file = Path(dcx_file).name
         sub_name = sub_item.data(Qt.UserRole) if sub_item else None
 
-        atlas_img = self.getPilImage(atlas_name).copy()
         try:
             new_img = Image.open(img_path).convert("RGBA")
         except UnidentifiedImageError:
             self.showError("Selected file is not an image supported by PIL.")
             return
 
-        if sub_name: # subtexture replacement
-            st = None
-            st = self.subtextures[atlas_name].get(sub_name, None) or self.getGridSubtexture(atlas_name, sub_name, atlas_img) # fallback to grid for older games
+        if sub_name:
+            atlas_img = self.getPilImage(atlas_name)
+            st = self.resolveSubtexture(atlas_name, sub_name, atlas_img)
 
             if not st:
                 self.showError(f"Could not resolve subtexture: {sub_name}")
                 return
 
             new_img = new_img.resize((st["width"], st["height"]), Image.Resampling.LANCZOS)
-            atlas_img.paste(new_img, (st["x"], st["y"]))
-        else: # full atlas replacement
-            atlas_img = new_img
 
-        self.thumbnail_cache[atlas_name] = atlas_img
-
-        if dcx_file not in self.pending_replacements:
-            self.pending_replacements[dcx_file] = {}
-        if atlas_name not in self.pending_replacements[dcx_file]:
-            self.pending_replacements[dcx_file][atlas_name] = {}
-
+        self.pending_replacements.setdefault(dcx_file, {}).setdefault(atlas_name, {})
         self.pending_replacements[dcx_file][atlas_name][sub_name] = new_img
+
+        self.rebuildAtlas(atlas_name, dcx_file)
 
         atlas_item.setForeground(Qt.yellow)
         if sub_item:
             sub_item.setForeground(Qt.yellow)
-            self.showSubtexture(self.subtexture_list.currentItem())
+            self.showSubtexture(sub_item)
         else:
-            self.showAtlas(self.atlas_list.currentItem())
+            self.showAtlas(atlas_item)
 
     def registerReplacement(self):
         """Prompt the user for an image, then add it to the replacement queue with the currently selected texture as the target."""
@@ -1556,17 +1522,67 @@ class MainWindow(QMainWindow):
             f"<b>Compressed Size:</b> {size_c}"
         )
 
-    def getPilImage(self, atlas_name, createDebug: bool = False):
-        """Load PIL image from TPF texture on-demand."""
-        if atlas_name in self.thumbnail_cache: # override if image is replaced
-            img = self.thumbnail_cache[atlas_name]
-        else:
-            texture = self.atlases[atlas_name]['texture']
-            with BytesIO(texture.data) as dds_buffer:
-                img = Image.open(dds_buffer).convert("RGBA")
+    def rebuildAtlas(self, atlas_name, dcx_file):
+        """Reconstruct the atlas with its changes"""
+        #print(self.pending_additions, self.pending_replacements)
+        base_img = self.getBaseImage(atlas_name)
+
+        additions = (self.pending_additions.get(dcx_file, {}).get("additions", []))
+
+        for add in additions:
+            if add.get("parent") != atlas_name:
+                continue
+
+            img = add["img"]
+            x = int(add["x"])
+            y = int(add["y"])
+
+            if y + img.height > base_img.height:
+                new_height = y + img.height
+                new_img = Image.new("RGBA", (base_img.width, new_height), (0, 0, 0, 0))
+                new_img.paste(base_img, (0, 0))
+                base_img = new_img
+
+            base_img.paste(img, (x, y))
+
+        atlas_repls = (self.pending_replacements.get(dcx_file, {}).get(atlas_name, {}))
+
+        for sub_name, img in atlas_repls.items():
+            if sub_name is None: # full atlas replacement
+                base_img = img.copy()
+                continue
+
+            st = self.resolveSubtexture(atlas_name, sub_name, base_img)
+            if not st:
+                continue
+
+            base_img.paste(img, (st["x"], st["y"]))
+
+        self.thumbnail_cache[atlas_name] = base_img
+
+    def getBaseImage(self, atlas_name):
+        """Always returns the original atlas image"""
+        texture = self.atlases[atlas_name]['texture']
+        with BytesIO(texture.data) as dds_buffer:
+            return Image.open(dds_buffer).convert("RGBA")
+
+    def getPilImage(self, atlas_name, createDebug=False):
+        """Returns rendered preview (rebuild if needed)"""
+        
+        if atlas_name not in self.thumbnail_cache:
+            atlas_item = self.atlas_list.currentItem()
+            if atlas_item:
+                dcx_file = Path(atlas_item.data(Qt.UserRole+1)).name
+                self.rebuildAtlas(atlas_name, dcx_file)
+
+        img = self.thumbnail_cache.get(atlas_name)
+
+        if img is None:
+            img = self.getBaseImage(atlas_name)
 
         if createDebug:
             img = Functions.createDebugGrid(img, self.subtextures[atlas_name])
+
         if self.alphaThreshold > 0:
             img = Functions.cleanByAlpha(img, threshold=self.alphaThreshold)
 
@@ -1574,9 +1590,9 @@ class MainWindow(QMainWindow):
 
     def isModified(self, dcx_file, atlas_name, sub_name=None):
         """Returns True if subtexture has been modified, for recoloring its entry."""
-        if sub_name in self.pending_replacements.get(Path(dcx_file), {}).get(atlas_name, {}):
+        if sub_name in self.pending_replacements.get(dcx_file, {}).get(atlas_name, {}):
             return Modified.REPLACED
-        if any(sub_name == i['name'] for i in self.pending_additions.get(Path(dcx_file).name, {}).get('additions', [])):
+        if any(sub_name == i['name'] for i in self.pending_additions.get(dcx_file, {}).get('additions', [])):
             return Modified.ADDED
         return Modified.FALSE
 
@@ -1585,7 +1601,7 @@ class MainWindow(QMainWindow):
         if not current:
             return
         atlas_name = current.data(Qt.UserRole)
-        dcx_file = current.data(Qt.UserRole+1)
+        dcx_file = Path(current.data(Qt.UserRole+1)).name
         self.current_atlas = atlas_name
         self.current_crop = None
         atlas_modified = False
