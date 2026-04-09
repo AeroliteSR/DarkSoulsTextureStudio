@@ -89,7 +89,7 @@ class ResFormat(Enum):
 
 class Functions():
     @staticmethod
-    def processLayout(queue, project_dir, game: Game, base_name, format_mode):
+    def processLayout(queue, output_dir: Path, game: Game, base_name, format_mode):
         for _, additions in queue.items():
             data = additions['data']
             to_add = additions['additions']
@@ -120,7 +120,7 @@ class Functions():
                 
                 binder.add_entry(entry=entry)
 
-            binder.write(project_dir / "Output" / ".DCX Files" / output_name)
+            binder.write(output_dir / output_name)
 
     @staticmethod
     def getFreeSpace(atlas_size, used_rects, w, h, step=4, padding=2):
@@ -560,7 +560,8 @@ class ReplaceWorker(QObject):
         self.additions = additions
         self.subtextures = subtextures
         self.getPilImage = getPilImage
-        self.project_dir = project_dir
+        self.output_dir = project_dir / "Output" / ".DCX Files" / datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        self.output_dir.mkdir(parents=True, exist_ok=True)
         self.LOADED_DCX_FILES = loaded_files
         self.LAYOUT_FILES = layouts
         self.game = game
@@ -584,7 +585,7 @@ class ReplaceWorker(QObject):
             if dcx_path in self.LAYOUT_FILES:
                 print(f"Processing layout for: {base_name}")
                 lyt_name = Functions.replaceTerms(base_name.split('.')[0], {"_h": "", "_l": ""}) if self.game.name == 'Nightreign' else ""
-                Functions.processLayout({dcx_path: add_data}, self.project_dir, self.game, lyt_name, format_mode=self.RESOLUTIONS.get(lyt_name, "H"))
+                Functions.processLayout({dcx_path: add_data}, self.output_dir, self.game, lyt_name, format_mode=self.RESOLUTIONS.get(lyt_name, "H"))
 
             additions_by_atlas = {}
             for sub in add_data["additions"]:
@@ -647,9 +648,7 @@ class ReplaceWorker(QObject):
 
                 writer = base.to_writer()
                 data = core.compress(bytes(writer), DCXType.DCX_KRAK)
-                out_dir = self.project_dir / "Output" / ".DCX Files" / datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-                out_dir.mkdir(parents=True, exist_ok=True)
-                with open(out_dir / base_name, "wb") as f:
+                with open(self.output_dir / base_name, "wb") as f:
                     f.write(data)
 
             self.finished.emit(True, "All changes applied successfully!")
