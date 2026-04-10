@@ -1163,10 +1163,10 @@ class MainWindow(QMainWindow):
                     file_mappings.append({"file": tpf, "layout": layout})
                 else:
                     file_mappings.append(tpf)
+                
+                self.RESOLUTIONS[prefix] = choice
 
             file_mappings.extend(standalone) # no layout
-
-            self.RESOLUTIONS[prefix] = choice
 
         elif self.game.name in ['Sekiro', 'Elden Ring']:
             for f in files:
