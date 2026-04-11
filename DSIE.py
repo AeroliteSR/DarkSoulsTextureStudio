@@ -11,6 +11,7 @@ from collections import defaultdict
 from enum import Enum, auto
 from PIL import Image, ImageDraw, UnidentifiedImageError
 from datetime import datetime
+import traceback
 # GUI
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QListWidget, QListWidgetItem, QCheckBox, QDialog,
 QLabel, QHBoxLayout, QFileDialog, QPushButton, QMessageBox, QSplitter, QProgressDialog, QInputDialog, QLineEdit, QComboBox, QMenu)
@@ -268,10 +269,13 @@ class LoadWorker(QObject):
         self.LAYOUT_FILES = {}
 
     def run(self):
-        if self.game.type == GameType.OLD:
-            self.processOld()
-        else: # sblyt is used
-            self.processModern()
+        try:
+            if self.game.type == GameType.OLD:
+                self.processOld()
+            else: # sblyt is used
+                self.processModern()
+        except Exception:
+            self.finished.emit(False, traceback.format_exc())
 
     def generateTextDict(self, dcx_path, percent):
         textures_dict: dict = {}
@@ -654,7 +658,6 @@ class ReplaceWorker(QObject):
             self.finished.emit(True, "All changes applied successfully!")
 
         except Exception:
-            import traceback
             self.finished.emit(False, traceback.format_exc())
 
 class MainWindow(QMainWindow):
@@ -1054,27 +1057,35 @@ class MainWindow(QMainWindow):
         try:
             oodle.LOAD_DLL(target)
         except oodle.MissingOodleDLLError:
-            result = QMessageBox.question(
-                    self,
-                    "DLL Missing",
-                    "Could not find oo2core_6_win64.dll within default game paths.\n"
-                    "Textures will not be loaded without it.\n\n"
-                    "Would you like to manually locate it?",
-                    QMessageBox.Yes | QMessageBox.No,
-                    QMessageBox.No)
-            
-            if result == QMessageBox.Yes:
-                dll = Path(QFileDialog.getOpenFileName(self, "Navigate to oo2core_6_win64.dll", "", "DLL Files (*.dll)")[0])
-                if dll and Path(dll).exists():
-                    try:                                            
-                        oodle.LOAD_DLL(dll)
-                        # Copy DLL next to the exe for future runs
-                        shutil.copy(dll, target)
-                        QMessageBox.information(self, "DLL Copied", f"{dll.name} has been copied to DSIE.\n"
-                                                                    "Future runs will automatically use this DLL.")
-                        
-                    except Exception as e:
-                        QMessageBox.critical(self, "Error", f"Failed to load DLL:\n{e}")
+            try:
+                dll = oodle.LOAD_DLL() # no args, checks default paths
+                shutil.copy(dll, target)
+                print("DEBUG:: oodle dll found in default paths and copied to DSIE")
+                
+            except oodle.MissingOodleDLLError:
+
+                result = QMessageBox.question(self, "DLL Missing",
+                                                    "Could not find oo2core_6_win64.dll within default paths.\n"
+                                                    "DCX_KRAK compression will be unavailable without it.\n\n"
+                                                    "Would you like to manually locate it?",
+                                                    QMessageBox.Yes | QMessageBox.No,
+                                                    QMessageBox.No)
+                
+                if result == QMessageBox.Yes:
+                    dll = Path(QFileDialog.getOpenFileName(self, "Navigate to oo2core_6_win64.dll", "", "DLL Files (*.dll)")[0])
+                    if dll and Path(dll).exists():
+                        if dll.name != "oo2core_6_win64":
+                            QMessageBox.warning(self, "Warning", "This dll doesn't match the expected version.")
+                            return
+                        try:
+                            oodle.LOAD_DLL(dll)
+                            # Copy DLL next to the exe for future runs
+                            shutil.copy(dll, target)
+                            QMessageBox.information(self, "DLL Copied", f"{dll.name} has been copied to DSIE.\n"
+                                                                        "Future runs will automatically use this DLL.")
+                            
+                        except Exception as e:
+                            QMessageBox.critical(self, "Error", f"Failed to load DLL:\n{e}")
 
     def openDcxDialog(self, dirmode: bool = False):
         """Handles everything to do with loading files. If dirmode = True, loads every dcx/tpf in a directory."""    
@@ -1173,10 +1184,10 @@ class MainWindow(QMainWindow):
                 if 'sblytbnd' in str(f):
                     continue
 
+                base_name = Functions.replaceTerms(f.stem, {'.tpf': ''})
                 layout = None
-                if "common" in f.stem:
-                    base_name = Functions.replaceTerms(f.stem, {'.tpf': ''})
 
+                if "common" in f.stem:
                     try_lyt = f.parent / f"{base_name}.sblytbnd.dcx"
 
                     if try_lyt.exists():

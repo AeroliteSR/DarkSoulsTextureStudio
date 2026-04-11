@@ -358,11 +358,4 @@ def LOAD_DLL(dll_path: str = ""):
         c.c_bool,  # corruptionPossible
     )
 
-
-# Load DLL automatically.
-try:
-    LOAD_DLL()
-except MissingOodleDLLError as load_ex:
-    _LOGGER.warning(
-        f"Could not find/load Oodle DLL. DCX_KRAK compression/decompression will be unavailable. Error: {load_ex}"
-    )
+    return dll_path # NOTE: added in DSIE to return dll path for copying
