@@ -1074,7 +1074,7 @@ class MainWindow(QMainWindow):
                 if result == QMessageBox.Yes:
                     dll = Path(QFileDialog.getOpenFileName(self, "Navigate to oo2core_6_win64.dll", "", "DLL Files (*.dll)")[0])
                     if dll and Path(dll).exists():
-                        if dll.name != "oo2core_6_win64":
+                        if dll.name != "oo2core_6_win64.dll":
                             QMessageBox.warning(self, "Warning", "This dll doesn't match the expected version.")
                             return
                         try:
