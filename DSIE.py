@@ -269,13 +269,10 @@ class LoadWorker(QObject):
         self.LAYOUT_FILES = {}
 
     def run(self):
-        try:
-            if self.game.type == GameType.OLD:
-                self.processOld()
-            else: # sblyt is used
-                self.processModern()
-        except Exception:
-            self.finished.emit(False, traceback.format_exc())
+        if self.game.type == GameType.OLD:
+            self.processOld()
+        else: # sblyt is used
+            self.processModern()
 
     def generateTextDict(self, dcx_path, percent):
         textures_dict: dict = {}
