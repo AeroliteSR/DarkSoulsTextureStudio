@@ -1257,12 +1257,9 @@ class MainWindow(QMainWindow):
         """Start the extract process for images."""
         output_dir = self.project_dir / "Output"
 
-        if mode == ExportMode.ATLAS:
-            ok, filetype = self.showSelectOptions('File Type', 'Would you like to export in PNG or DDS?', ['png', 'dds'])
-            if not ok:
-                return
-        else:
-            filetype = 'png'
+        ok, filetype = self.showSelectOptions('File Type', 'Would you like to export in PNG or DDS?', ['png', 'dds'])
+        if not ok:
+            return
 
         self.progress_dialog = QProgressDialog("Exporting...", "Cancel", 0, 100, self)
         self.progress_dialog.setWindowTitle("Exporting")
