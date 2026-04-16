@@ -647,10 +647,14 @@ class ReplaceWorker(QObject):
                         if os.path.exists(temp_path):
                             os.remove(temp_path)
 
-                writer = base.to_writer()
-                data = core.compress(bytes(writer), DCXType.DCX_KRAK)
+                writer = bytes(base.to_writer())
+                dcxtype = Types.CompressionTypes.get(self.game.name, DCXType.DCX_KRAK) # default to KRAK due to recency
+
+                if dcxtype != DCXType.Null: # NOT ds2 .tpf, compress to dcx
+                    writer = core.compress(writer, dcxtype)
+
                 with open(self.output_dir / base_name, "wb") as f:
-                    f.write(data)
+                    f.write(writer)
 
             self.finished.emit(True, "All changes applied successfully!")
 
@@ -1090,7 +1094,7 @@ class MainWindow(QMainWindow):
         self.checkOodleDLL()
 
         if not dirmode:
-            file_path = Path(QFileDialog.getOpenFileName(self, "Select DCX file", "", "DCX Files (*.dcx);;TPF Files (*.tpf)")[0])
+            file_path = Path(QFileDialog.getOpenFileName(self, "Select File", "", "Texture Files (*.tpf.dcx *.tpf);;All Files (*.*)")[0])
             if not file_path or file_path == BLANK_PATH:
                 return
             files = [file_path] if file_path else []
@@ -1451,7 +1455,7 @@ class MainWindow(QMainWindow):
             self.showError('No atlas loaded!')
             return
 
-        img_path = Path(QFileDialog.getOpenFileName(self, "Select Image", "", "Image Files (*.png *.dds *.jpg *.webm *.jpeg);;All Files (*.*)")[0])
+        img_path = Path(QFileDialog.getOpenFileName(self, "Select Image", "", "Image Files (*.png *.dds *.jpg *.webp *.jpeg);;All Files (*.*)")[0])
         if not img_path or img_path == BLANK_PATH:
             return
         
@@ -1616,6 +1620,9 @@ class MainWindow(QMainWindow):
         preview_img.thumbnail((600, 400), Image.Resampling.LANCZOS)
         pixmap = self.pil2Qpixmap(preview_img)
         self.preview_label.setPixmap(pixmap)
+
+        if self.isModified(dcx_file, atlas_name, None) == Modified.REPLACED: # check if WHOLE atlas is replaced
+            atlas_modified = True
 
         # Load subtextures
         self.subtexture_list.blockSignals(True)

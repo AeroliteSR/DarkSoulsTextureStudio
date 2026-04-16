@@ -11400,6 +11400,16 @@ class Maps():
               }
 
 class Types():
+    from soulstruct.dcx import DCXType
+    CompressionTypes = {
+        "Dark Souls 1": DCXType.DCX_DFLT_10000_24_9,
+        "Dark Souls 2": DCXType.Null,
+        "Dark Souls 3": DCXType.DCX_DFLT_10000_44_9,
+        "Sekiro": DCXType.DCX_KRAK,
+        "Elden Ring": DCXType.DCX_KRAK,
+        "Nightreign": DCXType.DCX_KRAK,
+    }
+
     SubtexturePrefix = [
         "MENU_Knowledge",
         "MENU_ItemIcon",
