@@ -406,7 +406,7 @@ class LoadWorker(QObject):
         except Exception as e:
             print(e)
             self.progress.emit(0, f"Error: {e}")
-            self.finished.emit({}, {}, {})
+            self.finished.emit({}, {}, {}, {})
 
 class ExtractWorker(QObject):
     progress = Signal(int, str) # percent, message
