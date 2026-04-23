@@ -1511,7 +1511,7 @@ class MainWindow(QMainWindow):
         pil_img.save(buf, format="PNG")
         return len(buf.getvalue())
 
-    def formatImageInfo(self, name, pil_img, coords='None', img_type="Atlas"):
+    def formatImageInfo(self, name, file, pil_img, coords='None', img_type="Atlas"):
         """Properly format information about the selected preview to display."""
         def formatSize(bytes_val):
             kb = bytes_val / 1024
@@ -1525,6 +1525,7 @@ class MainWindow(QMainWindow):
         return (
             f"<b>Type:</b> {img_type}<br>"
             f"<b>Name:</b> {name}<br>"
+            f"<b>In:</b> {file}<br>"
             f"<b>Coordinates:</b> {coords}<br>"
             f"<b>Dimensions:</b> {width} × {height}px<br>"
             f"<b>Uncompressed Size:</b> {size_uc}<br>"
@@ -1648,7 +1649,7 @@ class MainWindow(QMainWindow):
         self.subtexture_list.blockSignals(False)
         self.subtexture_list.sortItems()
 
-        self.info_label.setText(self.formatImageInfo(atlas_name, atlas_img, img_type=current.data(Qt.UserRole+2)))
+        self.info_label.setText(self.formatImageInfo(atlas_name, dcx_file, atlas_img, img_type=current.data(Qt.UserRole+2)))
         self.toggleCustomNames() # just to update it
 
     def showSubtexture(self, current):
@@ -1660,6 +1661,7 @@ class MainWindow(QMainWindow):
             name = current.data(Qt.UserRole)
             st = self.subtextures[self.current_atlas][name]
             atlas_img = self.getPilImage(self.current_atlas)
+            dcx_file = self.atlas_list.currentItem().data(Qt.UserRole+1).name
         except KeyError:
             self.subtexture_list.blockSignals(False)
             return
@@ -1670,7 +1672,7 @@ class MainWindow(QMainWindow):
 
         self.preview_label.setPixmap(pixmap)
         self.current_crop = cropped
-        self.info_label.setText(self.formatImageInfo(name, cropped, (st['x'], st['y']), 'Subtexture'))
+        self.info_label.setText(self.formatImageInfo(name, dcx_file, cropped, (st['x'], st['y']), 'Subtexture'))
 
     def saveSelection(self):
         """Save current subtexture or whole atlas"""
