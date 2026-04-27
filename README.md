@@ -1,4 +1,4 @@
-# DSIE: Dark Souls Icon Extractor
+# DSTS: Dark Souls Texture Studio
 A simple GUI application for previewing and exporting FromSoftware games' icons.  
 ## Supports:
  - Dark Souls Remastered
@@ -17,7 +17,7 @@ Pillow
 # Usage
 Install either [UXM](https://github.com/Nordgaren/UXM-Selective-Unpack) or [NUXE](https://github.com/JKAnderson/Nuxe), then run it and unpack the Menu folder — or the whole game if you want.
 
-After launching DSIE, you can either open a dcx/tpf file or a directory of them (such as your menu folder) from the File menu.
+After launching DSTS, you can either open a dcx/tpf file or a directory of them (such as your menu folder) from the File menu.
 If the game's root folder is found in the path, it will automatically load everything. Otherwise, it will ask that you select a game type and find layout files if needed. Simply select "Cancel" for said prompt, and atlases will be loaded without processing their subtextures.  
 
 The leftmost scrollarea are your atlases, the middle is for subtextures, and the right is the preview.  
@@ -31,8 +31,8 @@ Currently the `Settings` tab has only two options:
 `Custom Names` - This setting replaces the internal names with mapped ones in `GameInfo.py`. 
 This setting can be especially useful for if you don't know the ID of an item in a big list, allowing you to search by its display name. 
 Some data, such as Nightreign garbs and Sekiro bosses, were mapped manually, but most of it was scripted from Smithbox exports.  
-`Hide Blank Icons` - Only for older games with no layout system. DSIE crops the atlases in a grid layout. Because of this, some 'tiles' 
-may be blank. DSIE automatically recognises these blank spaces and ignores them when building the subtexture list. Disable this setting to show 
+`Hide Blank Icons` - Only for older games with no layout system. DSTS crops the atlases in a grid layout. Because of this, some 'tiles' 
+may be blank. DSTS automatically recognises these blank spaces and ignores them when building the subtexture list. Disable this setting to show 
 the aforementioned blank spaces, for example, if you wanted to place a new icon in that spot.  
 `Calculate Image Size` - When enabled, simulates the creation of a PNG image to display its file size. This info may be nice to know, but it comes at 
 a significant performance drop. It is, therefore, disabled by default.  
@@ -48,12 +48,12 @@ for an image file. The image you selected is then patched into the atlas/icon wi
 changes as a tpf/dcx file, which should work as is. Some testing showed that Witchy seems to find the files to be agreeable.  
   
 Pressing `Add` will once again prompt you for an image, this time to append as a completely new entry. After giving your new subtexture a name, 
-DSIE will find free space in the atlas to place it, enlarging the image if it doesn't find any. For modern games, the subtexture will 
+DSTS will find free space in the atlas to place it, enlarging the image if it doesn't find any. For modern games, the subtexture will 
 automatically be added to the layout (.sblytbnd) file as well. For the older games, it will simply attempt to add a new tile, respecting the existing 
 grid dimensions. Currently doesn't work on unmapped, non-uniform atlases.  
   
 Note: The high resolution versions of Elden Ring and Nightreigns's icons are stored in 00_solo(_h/l).tpfbdt which you can unpack with WitchyBND.  
-Be aware that opening this directory in DSIE will use a LOT of resources. (~3.4GB of RAM for ER and ~1.3GB for NR)  
+Be aware that opening this directory in DSTS will use a LOT of resources. (~3.4GB of RAM for ER and ~1.3GB for NR)  
   
 # Credits:
 A myriad thanks to Kmstr and Managarm for their suggestions, feedback and testing throughout development! :))  

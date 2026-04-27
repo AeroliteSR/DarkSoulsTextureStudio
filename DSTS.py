@@ -667,7 +667,7 @@ class MainWindow(QMainWindow):
         self.project_dir = project_dir
         self.alphaThreshold = 0
 
-        self.setWindowTitle("DSIE")
+        self.setWindowTitle("DSTS")
         self.setGeometry(100, 100, 1100, 700)
         self.createMenu()
 
@@ -781,9 +781,9 @@ class MainWindow(QMainWindow):
                                                                                                 "with a script using data from Smithbox exports, and should"
                                                                                                 " be accurate.<br><br>" \
                                                                                                 "<b>Hide Blank Icons:</b><br>" \
-                                                                                                "Only for older games with no layout system. DSIE crops the atlases" \
+                                                                                                "Only for older games with no layout system. DSTS crops the atlases" \
                                                                                                 " in a grid layout. Because of this, some \'tiles\' may be blank. " \
-                                                                                                "DSIE automatically recognises these blank spaces and ignores them " \
+                                                                                                "DSTS automatically recognises these blank spaces and ignores them " \
                                                                                                 "when building the subtexture list. Disable this setting to show " \
                                                                                                 "the aforementioned blank spaces, for example, if you wanted to " \
                                                                                                 "place a new icon in that spot.<br><br>" \
@@ -802,12 +802,12 @@ class MainWindow(QMainWindow):
                                                                                                 "will have their RGB values set to 0. Click to update the value.")))
         self.help_menu.addAction(createAction("Replacement", lambda: QMessageBox.information(self, "Replacement", 
                                                                                          "Pressing \"Replace\" will prompt you for an image file.<br>" \
-                                                                                         "DSIE will then replace the currently selected texture, whether that be" \
+                                                                                         "DSTS will then replace the currently selected texture, whether that be" \
                                                                                          " an atlas or a subtexture.<br><br>After replacing, go to" \
                                                                                          " File->Apply Changes to save. This may take a while.")))
         self.help_menu.addAction(createAction("Adding Icons", lambda: QMessageBox.information(self, "Adding Icons", 
                                                                                          "Pressing \"Add\" will prompt you for an image file.<br>" \
-                                                                                         "DSIE will then append the image to the current selected atlas," \
+                                                                                         "DSTS will then append the image to the current selected atlas," \
                                                                                          " if possible.<br><br>Afterwards, go to" \
                                                                                          " File->Apply Changes to save. This may take a while.")))
         self.help_menu.addAction(createAction("About", lambda: QMessageBox.information(self, "About", 
@@ -1037,7 +1037,7 @@ class MainWindow(QMainWindow):
 
     def clear(self):
         """Completely reset the window."""
-        self.setWindowTitle("DSIE")
+        self.setWindowTitle("DSTS")
         self.atlas_list.clear()
         self.subtexture_list.clear()
         self.subtextures = {}
@@ -1061,7 +1061,7 @@ class MainWindow(QMainWindow):
             try:
                 dll = oodle.LOAD_DLL() # no args, checks default paths
                 shutil.copy(dll, target)
-                print("DEBUG:: oodle dll found in default paths and copied to DSIE")
+                print("DEBUG:: oodle dll found in default paths and copied to DSTS")
                 
             except oodle.MissingOodleDLLError:
 
@@ -1082,7 +1082,7 @@ class MainWindow(QMainWindow):
                             oodle.LOAD_DLL(dll)
                             # Copy DLL next to the exe for future runs
                             shutil.copy(dll, target)
-                            QMessageBox.information(self, "DLL Copied", f"{dll.name} has been copied to DSIE.\n"
+                            QMessageBox.information(self, "DLL Copied", f"{dll.name} has been copied to DSTS.\n"
                                                                         "Future runs will automatically use this DLL.")
                             
                         except Exception as e:
@@ -1108,7 +1108,7 @@ class MainWindow(QMainWindow):
             return
 
         str_path = str(files[0].parent if dirmode else files[0])
-        self.setWindowTitle(f"DSIE - {str_path}")
+        self.setWindowTitle(f"DSTS - {str_path}")
 
         game = Functions.parseGameType(path=str_path) or Functions.gameTypeDialog()
         if not game:
@@ -1744,5 +1744,5 @@ def main():
 if __name__ == "__main__":
     main()
 
-# nuitka --standalone --onefile --windows-console-mode=disable --enable-plugin=pyside6 --windows-icon-from-ico=icon.ico --include-data-file=icon.ico=icon.ico --include-data-file=soulstruct\base\textures\texconv.exe=soulstruct\base\textures\texconv.exe --include-module=constrata --include-module=soulstruct --msvc=latest --lto=yes DSIE.py
-# pyinstaller DSIE.py --noconsole --icon=icon.ico --add-data "icon.ico;." --add-binary "soulstruct/base/textures/texconv.exe;soulstruct/base/textures" --collect-data soulstruct
+# nuitka --standalone --onefile --windows-console-mode=disable --enable-plugin=pyside6 --windows-icon-from-ico=icon.ico --include-data-file=icon.ico=icon.ico --include-data-file=soulstruct\base\textures\texconv.exe=soulstruct\base\textures\texconv.exe --include-module=constrata --include-module=soulstruct --msvc=latest --lto=yes DSTS.py
+# pyinstaller DSTS.py --noconsole --icon=icon.ico --add-data "icon.ico;." --add-binary "soulstruct/base/textures/texconv.exe;soulstruct/base/textures" --collect-data soulstruct
