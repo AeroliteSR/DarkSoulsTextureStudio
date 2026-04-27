@@ -22,7 +22,7 @@ if sys.platform == "win32":
 
 setup(
     name="DSTS",
-    version="3.2.0",
+    version="3.2.1",
     description="Dark Souls Texture Studio",
     options={"build_exe": build_exe_options},
     executables=[Executable("DSTS.py", base=base, icon="icon.ico")],
