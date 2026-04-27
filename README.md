@@ -1,14 +1,16 @@
 # DSTS: Dark Souls Texture Studio
 A simple GUI application for previewing and exporting FromSoftware games' icons.  
 ## Supports:
- - Demon's Souls (Read-only for now)
- - Dark Souls Remastered
- - Dark Souls 2 SOTFS
- - Dark Souls 3
- - Bloodborne (Read-only for now)
- - Sekiro
- - Elden Ring
- - Nightreign
+| Game       | Preview | Export | Replace | Add |
+|------------|---------|--------|---------|-----|
+| DeS        |   ✅    |  ✅    |   ❌    | ❌  |
+| DS:R       |   ✅    |  ✅    |   ✅    | ✅  |
+| DS2:SOTFS  |   ✅    |  ✅    |   ✅    | ❌  |
+| DS3        |   ✅    |  ✅    |   ✅    | ✅  |
+| BB         |   ✅    |  ✅    |   ❌    | ❌  |
+| SDT        |   ✅    |  ✅    |   ✅    | ✅  |
+| ER         |   ✅    |  ✅    |   ✅    | ✅  |
+| NR         |   ✅    |  ✅    |   ✅    | ✅  |
 
 # Prerequisites (pip install):
 rich  
