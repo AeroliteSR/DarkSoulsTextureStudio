@@ -220,8 +220,8 @@ class Functions():
     @staticmethod
     def parseGameType(path):
         game_type = None
-        #if "PS3_GAME" in path:
-            #game_type = 'Demon\'s Souls'
+        if "PS3_GAME" in path:
+            game_type = 'Demon\'s Souls'
         if "DARK SOULS REMASTERED" in path:
             game_type = 'Dark Souls 1'
         elif "Dark Souls II Scholar of the First Sin" in path:
@@ -240,7 +240,7 @@ class Functions():
 
     @staticmethod
     def gameTypeDialog():
-        options = ["Dark Souls 1", "Dark Souls 2", "Dark Souls 3", "Bloodborne", "Sekiro", "Elden Ring", "Nightreign",]
+        options = ["Demon's Souls", "Dark Souls 1", "Dark Souls 2", "Dark Souls 3", "Bloodborne", "Sekiro", "Elden Ring", "Nightreign",]
         choice, ok = QInputDialog.getItem(None, "Select Game Type", "Choose one of the following:", options, 0, False)
 
         if choice and ok:
@@ -298,8 +298,8 @@ class LoadWorker(QObject):
             if self.game.type == GameType.PS:
                 if self.game.name == "Bloodborne":
                     platform = tpf.TPFPlatform.PS4
-                elif self.game.name == "Demon's Souls": # TODO: currently unused due to deswizzling not working
-                    platform = tpf.TPFPlatform.PS3
+                elif self.game.name == "Demon's Souls":
+                    platform = tpf.TPFPlatform.PC
 
                 dds_data = texture.get_headerized_data(platform)
 
