@@ -358,4 +358,4 @@ def LOAD_DLL(dll_path: str = ""):
         c.c_bool,  # corruptionPossible
     )
 
-    return dll_path # NOTE: added in DSIE to return dll path for copying
+    return dll_path # NOTE: added in DSTS to return dll path for copying

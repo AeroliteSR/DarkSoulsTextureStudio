@@ -4,6 +4,7 @@ A simple GUI application for previewing and exporting FromSoftware games' icons.
  - Dark Souls Remastered
  - Dark Souls 2 SOTFS
  - Dark Souls 3
+ - Bloodborne (Read-only for now)
  - Sekiro
  - Elden Ring
  - Nightreign

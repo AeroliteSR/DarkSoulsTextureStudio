@@ -1,5 +1,8 @@
 class Maps():
     TextureDimensions = {
+            "Demon's Souls":
+            {},
+            
             "Dark Souls 1": 
             {'Icon00': {'width': 164, 'height': 184},
              'Icon01': {'width': 164, 'height': 184},
@@ -46,12 +49,16 @@ class Maps():
              'MENU_Icon_06000': {'width': 160, 'height': 160},
              'MENU_Icon_07000': {'width': 160, 'height': 160},
              'MENU_Icon_08000': {'width': 26, 'height': 26},
-             'MENU_Icon_09000': {'width': 26, 'height': 26},
+             'MENU_Icon_09000': {'width': 26, 'height': 26}
+            },
 
-            }
-              }
+            "Bloodborne":
+            {},
+    }
     
     AtlasNames = {
+            "Demon's Souls": {},
+
             "Dark Souls 1": 
             {'00': 'Title Screen',
              '01': 'Title Screen',
@@ -2755,6 +2762,8 @@ class Maps():
               "MENU_Knowledge_05139": "Spears of the Church",
 
             },
+
+            "Bloodborne": {},
 
             "Sekiro":
             {'SB_Boss': 'Bosses',
@@ -11402,9 +11411,11 @@ class Maps():
 class Types():
     from soulstruct.dcx import DCXType
     CompressionTypes = {
+        "Demon's Souls": DCXType.DCX_EDGE,
         "Dark Souls 1": DCXType.DCX_DFLT_10000_24_9,
         "Dark Souls 2": DCXType.Null,
         "Dark Souls 3": DCXType.DCX_DFLT_10000_44_9,
+        "Bloodborne": DCXType.DCX_DFLT_10000_44_9,
         "Sekiro": DCXType.DCX_KRAK,
         "Elden Ring": DCXType.DCX_KRAK,
         "Nightreign": DCXType.DCX_KRAK,

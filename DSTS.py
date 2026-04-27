@@ -47,6 +47,7 @@ class ExportMode(Enum):
 class GameType(Enum):
     OLD = auto()
     MODERN = auto()
+    PS = auto()
 
 class Modified(Enum):
     FALSE = auto()
@@ -55,6 +56,7 @@ class Modified(Enum):
 
 class Game():
     OLD_GAMES = {"Dark Souls 1", "Dark Souls 2", "Dark Souls 3"}
+    PS_GAMES = {"Bloodborne", "Demon's Souls"}
 
     def __init__(self, name: str):
         self.name = name
@@ -63,6 +65,8 @@ class Game():
     def classify(self, name: str) -> GameType:
         if name in self.OLD_GAMES:
             return GameType.OLD
+        elif name in self.PS_GAMES:
+            return GameType.PS
         else:
             return GameType.MODERN
 
@@ -216,12 +220,16 @@ class Functions():
     @staticmethod
     def parseGameType(path):
         game_type = None
+        #if "PS3_GAME" in path:
+            #game_type = 'Demon\'s Souls'
         if "DARK SOULS REMASTERED" in path:
             game_type = 'Dark Souls 1'
         elif "Dark Souls II Scholar of the First Sin" in path:
             game_type = 'Dark Souls 2'
         elif "DARK SOULS III" in path:
             game_type = 'Dark Souls 3'
+        elif "Bloodborne" in path:
+            game_type = 'Bloodborne'
         elif "Sekiro" in path:
             game_type = 'Sekiro'
         elif "ELDEN RING NIGHTREIGN" in path:
@@ -232,7 +240,7 @@ class Functions():
 
     @staticmethod
     def gameTypeDialog():
-        options = ["Dark Souls 1", "Dark Souls 2", "Dark Souls 3", "Sekiro", "Elden Ring", "Nightreign",]
+        options = ["Dark Souls 1", "Dark Souls 2", "Dark Souls 3", "Bloodborne", "Sekiro", "Elden Ring", "Nightreign",]
         choice, ok = QInputDialog.getItem(None, "Select Game Type", "Choose one of the following:", options, 0, False)
 
         if choice and ok:
@@ -269,10 +277,43 @@ class LoadWorker(QObject):
         self.LAYOUT_FILES = {}
 
     def run(self):
-        if self.game.type == GameType.OLD:
-            self.processOld()
-        else: # sblyt is used
+        if self.game.type == GameType.MODERN: # sblyt is used
             self.processModern()
+        else: # DS/PS
+            self.processOld()
+
+    def handleUnpack(self, path):
+        if self.game.type == GameType.PS:
+            try:
+                tex,_ = core.decompress(path)
+                tpfdcx = tpf.TPF.from_bytes(tex)
+            except core.DCXError:
+                tpfdcx = tpf.TPF(path) # it's probably a tpf file, may as well try
+        else:
+            tpfdcx = tpf.TPF(path)
+
+        self.LOADED_DCX_FILES[path.name] = tpfdcx
+
+        for texture in tpfdcx.textures:
+            if self.game.type == GameType.PS:
+                if self.game.name == "Bloodborne":
+                    platform = tpf.TPFPlatform.PS4
+                elif self.game.name == "Demon's Souls": # TODO: currently unused due to deswizzling not working
+                    platform = tpf.TPFPlatform.PS3
+
+                dds_data = texture.get_headerized_data(platform)
+
+                texture = tpf.TPFTexture(    
+                    stem=texture.stem,
+                    data=dds_data,
+                    platform=platform,
+                    console_info=texture.console_info,
+                    format=texture.format,
+                    texture_type=texture.texture_type,
+                    mipmap_count=texture.mipmap_count,
+                    texture_flags=texture.texture_flags)
+            
+            yield texture
 
     def generateTextDict(self, dcx_path, percent):
         textures_dict: dict = {}
@@ -285,9 +326,7 @@ class LoadWorker(QObject):
             paths = [Path(dcx_path)]
 
         for path in paths:
-            tpfdcx = tpf.TPF(path)
-            self.LOADED_DCX_FILES[path.name] = tpfdcx
-            for texture in tpfdcx.textures:
+            for texture in self.handleUnpack(path):
                 textures_dict[texture.stem] = texture
 
         self.progress.emit(percent, f"Loaded {dcx_path.stem}")
@@ -404,7 +443,7 @@ class LoadWorker(QObject):
             self.finished.emit(atlases, subtextures, self.LOADED_DCX_FILES, {})
 
         except Exception as e:
-            print(e)
+            traceback.print_exc()
             self.progress.emit(0, f"Error: {e}")
             self.finished.emit({}, {}, {}, {})
 
@@ -948,6 +987,10 @@ class MainWindow(QMainWindow):
         self.showSubtexture(sub_item)
 
     def addIcon(self):
+        if self.game.type == GameType.PS:
+            self.showError("Sorry! Additions are not currently supported for PS games (BB/DES)")
+            return
+        
         if self.atlas_list.count() == 0:
             self.showError('No atlases loaded!')
             return
@@ -1443,6 +1486,10 @@ class MainWindow(QMainWindow):
 
     def registerReplacement(self):
         """Prompt the user for an image, then add it to the replacement queue with the currently selected texture as the target."""
+        if self.game.type == GameType.PS:
+            self.showError("Sorry! Replacements are not currently supported for PS4 games (BB/DES)")
+            return
+        
         if self.atlas_list.count() == 0:
             self.showError('No atlases loaded!')
             return

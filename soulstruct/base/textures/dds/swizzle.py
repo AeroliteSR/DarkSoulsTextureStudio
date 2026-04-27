@@ -76,3 +76,58 @@ def swizzle_dds_bytes_ps4(
                 swizzled_start = (dest_tile_row * 8 * sx + dest_tile_col * 8) * dds_bytes_per_pixel_set
                 swizzled[swizzled_start:swizzled_start + dds_bytes_per_pixel_set] = deswizzled_tile
     return bytes(swizzled)
+
+
+"""Added in DSTS, currently unused but may be implemented in the future for replacements."""
+def swizzle_dds_bytes_ps4(
+    deswizzled: bytes,
+    dxgi_format,
+    width: int,
+    height: int,
+    min_data_size: int = 0
+) -> bytes:
+
+    bits_per_pixel, pixel_block_size, bpp_set = dxgi_format.get_format_info()
+
+    if bpp_set >= len(deswizzled):
+        return deswizzled.ljust(min_data_size, b"\0")
+
+    if len(deswizzled) < min_data_size:
+        deswizzled = deswizzled.ljust(min_data_size, b"\0")
+
+    calculated_size = (width * height * bits_per_pixel) // 8
+    if min_data_size > calculated_size:
+        calculated_size = min_data_size
+
+    out = bytearray(max(calculated_size, bpp_set))
+
+    sy = height // pixel_block_size
+    sx = width // pixel_block_size
+
+    stream_pos = 0
+
+    for i in range((sy + 7) // 8):
+        for j in range((sx + 7) // 8):
+            for t in range(64):
+
+                idx = morton(t, 8, 8)
+                tile_y = idx // 8
+                tile_x = idx % 8
+
+                byte_limit = len(deswizzled) - bpp_set
+                if stream_pos > byte_limit:
+                    return bytes(out)
+
+                if (j * 8 + tile_x < sx) and (i * 8 + tile_y < sy):
+
+                    source_index = bpp_set * (
+                        (i * 8 + tile_y) * sx + (j * 8 + tile_x)
+                    )
+
+                    if source_index < len(deswizzled):
+                        out[stream_pos:stream_pos + bpp_set] = \
+                            deswizzled[source_index:source_index + bpp_set]
+
+                stream_pos += bpp_set
+
+    return bytes(out)
