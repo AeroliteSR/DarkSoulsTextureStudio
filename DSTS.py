@@ -16,7 +16,7 @@ import traceback
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QListWidget, QListWidgetItem, QCheckBox, QDialog,
 QLabel, QHBoxLayout, QFileDialog, QPushButton, QMessageBox, QSplitter, QProgressDialog, QInputDialog, QLineEdit, QComboBox, QMenu)
 from PySide6.QtGui import QPixmap, QImage, QIcon, QDesktopServices, QAction
-from PySide6.QtCore import Qt, QObject, QThread, QUrl, Signal, QPoint
+from PySide6.QtCore import Qt, QObject, QThread, QUrl, Signal, QPoint, QTimer
 # Soulstruct
 from soulstruct.containers import tpf, Binder, BinderEntry, BinderVersion, BinderVersion4Info
 from soulstruct.dcx import core, oodle, DCXType
@@ -1319,11 +1319,9 @@ class MainWindow(QMainWindow):
         self.Eworker = worker
         self.progress_dialog.canceled.connect(self.Eworker.interrupt)
 
-        worker.progress.connect(self.updateProgress)
-        worker.finished.connect(self.extractionDone)
-        worker.finished.connect(thread.quit)
-        worker.finished.connect(worker.deleteLater)
-        thread.finished.connect(thread.deleteLater)
+        worker.progress.connect(self.updateProgress, Qt.QueuedConnection)
+        worker.finished.connect(self.extractionDone, Qt.QueuedConnection)
+        worker.finished.connect(lambda: QTimer.singleShot(0, thread.quit))
 
         thread.started.connect(worker.run)
         thread.start()
