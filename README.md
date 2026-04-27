@@ -1,6 +1,7 @@
 # DSTS: Dark Souls Texture Studio
 A simple GUI application for previewing and exporting FromSoftware games' icons.  
 ## Supports:
+ - Demon's Souls (Read-only for now)
  - Dark Souls Remastered
  - Dark Souls 2 SOTFS
  - Dark Souls 3
