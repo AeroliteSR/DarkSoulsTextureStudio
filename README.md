@@ -31,6 +31,9 @@ Older games (DSR and DS3) instead just use a numbered grid system. I have alread
 which will be split correctly into subtextures.  
 Dark Souls 2 doesn't use atlases and just keeps a folder of thousands of images, making it hard to organize.  
   
+_**Note**_: The high resolution versions of Elden Ring and Nightreigns's icons are stored in 00_solo(_h/l).tpfbdt which you can unpack with WitchyBND.  
+Be aware that opening this directory in DSTS will use a LOT of resources. (~3.4GB of RAM for ER and ~1.3GB for NR)  
+  
 ## Settings:  
 `Custom Names` - This setting replaces the internal names with mapped ones in `GameInfo.py`. 
 This setting can be especially useful for if you don't know the ID of an item in a big list, allowing you to search by its display name. 
@@ -59,8 +62,6 @@ DSTS will find free space in the atlas to place it, enlarging the image if it do
 automatically be added to the layout (.sblytbnd) file as well. For the older games, it will simply attempt to add a new tile, respecting the existing 
 grid dimensions. Currently doesn't work on unmapped, non-uniform atlases.  
   
-Note: The high resolution versions of Elden Ring and Nightreigns's icons are stored in 00_solo(_h/l).tpfbdt which you can unpack with WitchyBND.  
-Be aware that opening this directory in DSTS will use a LOT of resources. (~3.4GB of RAM for ER and ~1.3GB for NR)  
   
 # Credits:
 A myriad thanks to Kmstr and Managarm for their suggestions, feedback and testing throughout development! :))  
