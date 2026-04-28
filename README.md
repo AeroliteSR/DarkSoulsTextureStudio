@@ -1,5 +1,5 @@
 # DSTS: Dark Souls Texture Studio
-A simple GUI application for previewing and exporting FromSoftware games' icons.  
+A simple GUI application for managing icons and UI textures in FromSoftware games.  
 ## Supports:
 | Game       | Preview | Export | Replace | Add |
 |------------|---------|--------|---------|-----|
@@ -31,7 +31,7 @@ Older games (DSR and DS3) instead just use a numbered grid system. I have alread
 which will be split correctly into subtextures.  
 Dark Souls 2 doesn't use atlases and just keeps a folder of thousands of images, making it hard to organize.  
   
-Currently the `Settings` tab has only two options:  
+## Settings:  
 `Custom Names` - This setting replaces the internal names with mapped ones in `GameInfo.py`. 
 This setting can be especially useful for if you don't know the ID of an item in a big list, allowing you to search by its display name. 
 Some data, such as Nightreign garbs and Sekiro bosses, were mapped manually, but most of it was scripted from Smithbox exports.  
@@ -44,13 +44,16 @@ a significant performance drop. It is, therefore, disabled by default.
 but can be optionally selected for atlas exports.  
 `Alpha Threshold` - Any pixel with an alpha value less than or equal to this number will have their RGB values set to 0. Click to update the value.  
   
+## Searching entries
 You can press the `Search` button on the menu bar to open a prompt for a string. It defaults to Qt.MatchContains within the subtextures list.
 If you want it to search through atlases (for example, for DS2), check `Search Atlases`  
   
+## Texture replacement
 The `Replace` button selects whichever texture you currently have in the preview, whether that is an atlas or one of its subtextures. It then prompts you 
 for an image file. The image you selected is then patched into the atlas/icon within memory. Going to `File -> Apply Replacements` will then export your 
 changes as a tpf/dcx file, which should work as is. Some testing showed that Witchy seems to find the files to be agreeable.  
   
+## Adding custom icons
 Pressing `Add` will once again prompt you for an image, this time to append as a completely new entry. After giving your new subtexture a name, 
 DSTS will find free space in the atlas to place it, enlarging the image if it doesn't find any. For modern games, the subtexture will 
 automatically be added to the layout (.sblytbnd) file as well. For the older games, it will simply attempt to add a new tile, respecting the existing 
