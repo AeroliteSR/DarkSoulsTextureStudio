@@ -225,7 +225,7 @@ class DXGI_FORMAT(IntEnum):
 
         return bits_per_pixel, pixel_block_size, dds_bytes_per_pixel_set
 
-BC_BLOCK_SIZES = {
+BC_BLOCK_SIZES = { # NOTE: Added in DSTS
     DXGI_FORMAT.BC1_UNORM: 8,
     DXGI_FORMAT.BC1_UNORM_SRGB: 8,
     DXGI_FORMAT.BC3_UNORM: 16,
