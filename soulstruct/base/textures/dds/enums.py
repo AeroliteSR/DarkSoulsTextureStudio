@@ -210,33 +210,10 @@ class DXGI_FORMAT(IntEnum):
     V208 = 131
     V408 = 132
     FORCE_UINT = 0xffffffff
-
+    
+    """Rewritten in DSTS, not original to Soulstruct."""
     def get_format_info(self) -> tuple[int, int, int]:
         """Return bits per pixel, pixel block size, and number of bytes corresponding to one pixel set."""
-        bits_per_pixel = DXGI_FORMAT_BPP[self]
-        pixel_block_size = 4 if (70 <= self <= 84 or 94 <= self <= 99) else 1
-        dds_bytes_per_pixel_set = bits_per_pixel // 8 if pixel_block_size == 1 else pixel_block_size * 2
-        return bits_per_pixel, pixel_block_size, dds_bytes_per_pixel_set
-    
-    """Added in DSTS, not original to Soulstruct."""
-    def get_format_info(self) -> tuple[int, int, int]:
-        BC_BLOCK_SIZES = {
-            DXGI_FORMAT.BC1_UNORM: 8,
-            DXGI_FORMAT.BC1_UNORM_SRGB: 8,
-
-            DXGI_FORMAT.BC3_UNORM: 16,
-            DXGI_FORMAT.BC3_UNORM_SRGB: 16,
-
-            DXGI_FORMAT.BC4_UNORM: 8,
-            DXGI_FORMAT.BC4_SNORM: 8,
-
-            DXGI_FORMAT.BC5_UNORM: 16,
-            DXGI_FORMAT.BC5_SNORM: 16,
-
-            DXGI_FORMAT.BC7_UNORM: 16,
-            DXGI_FORMAT.BC7_UNORM_SRGB: 16,
-        }
-        
         bits_per_pixel = DXGI_FORMAT_BPP[self]
 
         if self in BC_BLOCK_SIZES:
@@ -248,6 +225,18 @@ class DXGI_FORMAT(IntEnum):
 
         return bits_per_pixel, pixel_block_size, dds_bytes_per_pixel_set
 
+BC_BLOCK_SIZES = {
+    DXGI_FORMAT.BC1_UNORM: 8,
+    DXGI_FORMAT.BC1_UNORM_SRGB: 8,
+    DXGI_FORMAT.BC3_UNORM: 16,
+    DXGI_FORMAT.BC3_UNORM_SRGB: 16,
+    DXGI_FORMAT.BC4_UNORM: 8,
+    DXGI_FORMAT.BC4_SNORM: 8,
+    DXGI_FORMAT.BC5_UNORM: 16,
+    DXGI_FORMAT.BC5_SNORM: 16,
+    DXGI_FORMAT.BC7_UNORM: 16,
+    DXGI_FORMAT.BC7_UNORM_SRGB: 16
+}
 
 # Bits per pixel for the 116 standard DXGI formats.
 DXGI_FORMAT_BPP = {
