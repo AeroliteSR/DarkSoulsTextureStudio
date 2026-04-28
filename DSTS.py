@@ -451,7 +451,7 @@ class ExtractWorker(QObject):
     progress = Signal(int, str) # percent, message
     finished = Signal(bool) # success
 
-    def __init__(self, atlases, subtextures, output_dir, loader, tasks=None, mode=ExportMode.SUBTEXTURE, filetype='png'):
+    def __init__(self, atlases, subtextures, output_dir, loader, tasks=None, mode=ExportMode.SUBTEXTURE, filetype='png', gridOverlay=False):
         super().__init__()
         self.atlases = atlases
         self.subtextures = subtextures
@@ -460,6 +460,7 @@ class ExtractWorker(QObject):
         self.tasks = tasks if tasks is not None else []
         self.mode = mode
         self.filetype = filetype
+        self.gridOverlay = gridOverlay
         self._interrupted = False
 
     def interrupt(self):
@@ -511,6 +512,9 @@ class ExtractWorker(QObject):
                     out_path = self.output_dir / '.Atlases'
                     filename = atlas_name
                     message = f"Exported atlas: {atlas_name}"
+
+                    if self.gridOverlay:
+                        atlas_img = Functions.createDebugGrid(atlas_img, self.subtextures[atlas_name])
 
                 elif self.mode == ExportMode.SUBTEXTURE:
                     out_path = self.output_dir / atlas_name
@@ -1297,7 +1301,7 @@ class MainWindow(QMainWindow):
         self.toggleCustomNames() # simply update it just in case setting was on before load
         self.atlas_list.setCurrentRow(0)
 
-    def runExtraction(self, tasks=None, mode=ExportMode.SUBTEXTURE):
+    def runExtraction(self, tasks=None, mode=ExportMode.SUBTEXTURE, gridOverlay=False):
         """Start the extract process for images."""
         output_dir = self.project_dir / "Output"
 
@@ -1312,7 +1316,7 @@ class MainWindow(QMainWindow):
         QApplication.processEvents()
 
         thread = QThread(self)
-        worker = ExtractWorker(self.atlases, self.subtextures, output_dir, loader=self.getPilImage, tasks=tasks, mode=mode, filetype=filetype)
+        worker = ExtractWorker(self.atlases, self.subtextures, output_dir, loader=self.getPilImage, tasks=tasks, mode=mode, filetype=filetype, gridOverlay=gridOverlay)
         worker.moveToThread(thread)
 
         self.Ethread = thread
@@ -1753,7 +1757,7 @@ class MainWindow(QMainWindow):
                 elif answer == QMessageBox.No:
                     gridOverlay = False
 
-            self.runExtraction(tasks=[(self.current_atlas, None)], mode=ExportMode.ATLAS)
+            self.runExtraction(tasks=[(self.current_atlas, None)], mode=ExportMode.ATLAS, gridOverlay=gridOverlay)
 
     def saveAll(self):
         """Export all subtextures from the currently selected atlas"""
@@ -1770,7 +1774,16 @@ class MainWindow(QMainWindow):
 
     def dumpTextures(self, mode=ExportMode.SUBTEXTURE):
         """Export all atlases or subtextures. Subtextures go into directories for their atlases"""
-        self.runExtraction(mode=mode)
+        gridOverlay = self.btn_atlasGrid.isChecked()
+        if gridOverlay and mode == ExportMode.ATLAS:
+            answer = self.showQuery('Export', 'You currently have the Grid Overlay enabled, do you want to keep it in the image for these exports?')
+            if answer == QMessageBox.Cancel:
+                return
+            
+            elif answer == QMessageBox.No:
+                gridOverlay = False
+
+        self.runExtraction(mode=mode, gridOverlay=gridOverlay)
 
 def getIcon(base_path):
     if getattr(sys, 'frozen', False):
