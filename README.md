@@ -11,6 +11,7 @@ A simple GUI application for managing icons and UI textures in FromSoftware game
 | SDT        |   ✅    |  ✅    |   ✅    | ✅  |
 | ER         |   ✅    |  ✅    |   ✅    | ✅  |
 | NR         |   ✅    |  ✅    |   ✅    | ✅  |  
+  
 *DS1 refers to both PTDE and Remastered, and DS2 refers to both the original and SOTFS
 
 # Prerequisites (pip install):
