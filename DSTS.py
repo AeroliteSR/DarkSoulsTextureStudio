@@ -220,21 +220,29 @@ class Functions():
     @staticmethod
     def parseGameType(path):
         game_type = None
-        if "PS3_GAME" in path:
+        parts = Path(path).parts
+
+        def has_sequence(parts, sequence):
+            for i in range(len(parts) - len(sequence) + 1):
+                if parts[i:i+len(sequence)] == tuple(sequence):
+                    return True
+            return False
+
+        if "PS3_GAME" in parts:
             game_type = 'Demon\'s Souls'
-        if "DARK SOULS REMASTERED" in path:
+        if has_sequence(parts, ["steamapps", "common", "DARK SOULS REMASTERED"]):
             game_type = 'Dark Souls 1'
-        elif "Dark Souls II Scholar of the First Sin" in path:
+        elif has_sequence(parts, ["steamapps", "common", "Dark Souls II Scholar of the First Sin"]):
             game_type = 'Dark Souls 2'
-        elif "DARK SOULS III" in path:
+        elif has_sequence(parts, ["steamapps", "common", "DARK SOULS III"]):
             game_type = 'Dark Souls 3'
-        elif "Bloodborne" in path:
+        elif has_sequence(parts, ["Bloodborne", "CUSA03173", "dvdroot_ps4"]):
             game_type = 'Bloodborne'
-        elif "Sekiro" in path:
+        elif has_sequence(parts, ["steamapps", "common", "Sekiro"]):
             game_type = 'Sekiro'
-        elif "ELDEN RING NIGHTREIGN" in path:
+        elif has_sequence(parts, ["steamapps", "common", "ELDEN RING NIGHTREIGN"]):
             game_type = 'Nightreign'
-        elif "ELDEN RING" in path:
+        elif has_sequence(parts, ["steamapps", "common", "ELDEN RING"]):
             game_type = 'Elden Ring'
         return game_type
 
