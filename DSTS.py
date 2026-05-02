@@ -12,14 +12,16 @@ from enum import Enum, auto
 from PIL import Image, ImageDraw, UnidentifiedImageError
 from datetime import datetime
 import traceback
+from math import gcd
 # GUI
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QListWidget, QListWidgetItem, QCheckBox, QDialog,
 QLabel, QHBoxLayout, QFileDialog, QPushButton, QMessageBox, QSplitter, QProgressDialog, QInputDialog, QLineEdit, QComboBox, QMenu)
 from PySide6.QtGui import QPixmap, QImage, QIcon, QDesktopServices, QAction
 from PySide6.QtCore import Qt, QObject, QThread, QUrl, Signal, QPoint, QTimer
 # Soulstruct
-from soulstruct.containers import tpf, Binder, BinderEntry, BinderVersion, BinderVersion4Info
+from soulstruct.containers import Binder, BinderEntry, BinderVersion, BinderVersion4Info
 from soulstruct.dcx import core, oodle, DCXType
+from soulstruct.containers.tpf import TPF, TPFPlatform, TPFTexture
 # Custom
 from GameInfo import Maps, Types
 
@@ -294,24 +296,24 @@ class LoadWorker(QObject):
         if self.game.type == GameType.PS:
             try:
                 tex,_ = core.decompress(path)
-                tpfdcx = tpf.TPF.from_bytes(tex)
+                tpfdcx = TPF.from_bytes(tex)
             except core.DCXError:
-                tpfdcx = tpf.TPF(path) # it's probably a tpf file, may as well try
+                tpfdcx = TPF(path) # it's probably a tpf file, may as well try
         else:
-            tpfdcx = tpf.TPF(path)
+            tpfdcx = TPF(path)
 
         self.LOADED_DCX_FILES[path.name] = tpfdcx
 
         for texture in tpfdcx.textures:
             if self.game.type == GameType.PS:
                 if self.game.name == "Bloodborne":
-                    platform = tpf.TPFPlatform.PS4
+                    platform = TPFPlatform.PS4
                 elif self.game.name == "Demon's Souls":
-                    platform = tpf.TPFPlatform.PC
+                    platform = TPFPlatform.PC
 
                 dds_data = texture.get_headerized_data(platform)
 
-                texture = tpf.TPFTexture(    
+                texture = TPFTexture(    
                     stem=texture.stem,
                     data=dds_data,
                     platform=platform,
@@ -508,7 +510,7 @@ class ExtractWorker(QObject):
                 break
             
             if self.filetype == 'dds':
-                texture: tpf.TPFTexture = self.atlases[atlas_name]['texture']
+                texture: TPFTexture = self.atlases[atlas_name]['texture']
                 texture.write_dds(Path(self.output_dir) / ".Atlases" / f"{atlas_name}.dds")
                 self.progress.emit(100, f"Exported atlas: {atlas_name}")
 
@@ -665,7 +667,7 @@ class ReplaceWorker(QObject):
     def run(self):
         try:
             for base_name, atlases in self.buildOperations().items():
-                base = deepcopy(self.LOADED_DCX_FILES[base_name])
+                base: TPF = deepcopy(self.LOADED_DCX_FILES[base_name])
                 atlas_cache = {}
 
                 for atlas_name, ops in atlases.items():
@@ -692,20 +694,13 @@ class ReplaceWorker(QObject):
                         temp_path = tmp.name
                         atlas_img.save(temp_path)
                     try:
-                        texture = tpf.TPF.find_texture_stem(base, atlas_name)
+                        texture = TPF.find_texture_stem(base, atlas_name)
                         texture.replace_dds(temp_path)
                     finally:
                         if os.path.exists(temp_path):
                             os.remove(temp_path)
 
-                writer = bytes(base.to_writer())
-                dcxtype = Types.CompressionTypes.get(self.game.name, DCXType.DCX_KRAK) # default to KRAK due to recency
-
-                if dcxtype != DCXType.Null: # NOT ds2 .tpf, compress to dcx
-                    writer = core.compress(writer, dcxtype)
-
-                with open(self.output_dir / base_name, "wb") as f:
-                    f.write(writer)
+                base.write(self.output_dir / base_name)
 
             self.finished.emit(True, "All changes applied successfully!")
 
@@ -874,7 +869,6 @@ class MainWindow(QMainWindow):
         dcx_file = Path(current.data(Qt.UserRole+1)).name
         sub_name = item.data(Qt.UserRole)
 
-        #print(dcx_file, atlas_name, sub_name)
         modify = self.isModified(dcx_file, atlas_name, sub_name)
         if modify == Modified.FALSE:
             return # return on vanilla items, no reason to edit them
@@ -1577,6 +1571,7 @@ class MainWindow(QMainWindow):
             return f"{kb / 1024:.2f} MB"
         
         width, height = pil_img.size
+        g = gcd(width, height)
         size_uc = formatSize(width * height * len(pil_img.getbands()))
         size_c = formatSize(self.getPngSize(pil_img)) if self.btn_calcImageSize.isChecked() else "???"
         return (
@@ -1585,6 +1580,7 @@ class MainWindow(QMainWindow):
             f"<b>In:</b> {file}<br>"
             f"<b>Coordinates:</b> {coords}<br>"
             f"<b>Dimensions:</b> {width} × {height}px<br>"
+            f"<b>Aspect Ratio:</b> {width//g}:{height//g}<br>"
             f"<b>Uncompressed Size:</b> {size_uc}<br>"
             f"<b>Compressed Size:</b> {size_c}"
         )

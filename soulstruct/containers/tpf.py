@@ -303,7 +303,7 @@ class TPFTexture:
     def write_dds(self, dds_path: str | Path):
         Path(dds_path).write_bytes(self.data)
 
-    def replace_dds(self, image_path: Path | str, dds_format: str = None):
+    def replace_dds(self, image_path: Path | str, dds_format: str = None, make_headerless: bool = False):
         if dds_format is None:
             dds = self.get_dds()
             dds_format = dds.texconv_format
@@ -318,7 +318,20 @@ class TPFTexture:
             result = texconv("-f", dds_format, "-o", dds_dir, "-nologo", "-y", temp_image_path)
             if result.returncode == 0:
                 try:
-                    self.data = Path(dds_dir, "temp.dds").read_bytes()
+                    dds_loc = Path(dds_dir, "temp.dds")
+                    if not make_headerless:
+                        self.data = dds_loc.read_bytes()
+                    elif make_headerless: # NOTE: DSTS: Not currently used, leftovers from testing BB replacement which may eventually be implemented
+                        dds = DDS.from_path(dds_loc)
+
+                        header_size = 128 
+                        if dds.dx10_header:
+                            header_size += 20  # DX10 header size
+                        
+                        with open(dds_loc, "rb") as f:
+                            f.seek(header_size)
+                            self.data = f.read()
+                    
                 except FileNotFoundError:
                     stdout = result.stdout.decode()
                     raise TexconvError(
