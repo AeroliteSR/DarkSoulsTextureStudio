@@ -10,8 +10,8 @@ def showError(text, title="Error", _type=QMessageBox.Critical):
     msg.setText(text) 
     msg.exec()
 
-def showQuery(self, title, text):
-    return QMessageBox.question(self, title, text, QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
+def showQuery(title, text):
+    return QMessageBox.question(None, title, text, QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
 
 class SearchWindow(QWidget):
     results = Signal(str, bool) # text, atlas search mode

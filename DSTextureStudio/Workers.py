@@ -20,7 +20,6 @@ from DSTextureStudio.Dataclasses import *
 from DSTextureStudio.Enums import *
 from DSTextureStudio.Helpers import *
 
-
 class LoadWorker(QObject):
     progress = Signal(int, str)   # percent, message
     finished = Signal(dict, dict, dict, dict)  # atlases, subtextures, loaded dcx files, parsed xml data
