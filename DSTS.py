@@ -442,12 +442,12 @@ class TextureStudio(QMainWindow):
                         except Exception as e:
                             QMessageBox.critical(self, "Error", f"Failed to load DLL:\n{e}")
 
-    def gameTypeDialog(self):
-        options = ["Demon's Souls", "Dark Souls 1", "Dark Souls 2", "Dark Souls 3", "Bloodborne", "Sekiro", "Elden Ring", "Nightreign",]
+    def gameTypeDialog(self) -> Game:
+        options = ["Demon's Souls", "Dark Souls 1", "Dark Souls 2", "Dark Souls 3", "Bloodborne", "Sekiro", "Elden Ring", "Nightreign"]
         choice, ok = QInputDialog.getItem(None, "Select Game Type", "Choose one of the following:", options, 0, False)
 
         if choice and ok:
-            return choice
+            return Game(choice)
         return None
 
     def openDcxDialog(self, dirmode: bool = False):
@@ -473,9 +473,9 @@ class TextureStudio(QMainWindow):
         self.setWindowTitle(f"DSTS - {str_path}")
 
         game = parseGameType(path=str_path) or self.gameTypeDialog()
-        if not game:
+        if game is None:
             return
-        self.game = Game(game)
+        self.game = game
 
         file_mappings = []
         if self.game.name == 'Nightreign':

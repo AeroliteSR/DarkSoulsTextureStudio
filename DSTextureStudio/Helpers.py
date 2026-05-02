@@ -109,7 +109,7 @@ def replaceTerms(text, terms: dict):
             text = text.replace(term, replacement)
     return text
     
-def parseGameType(path):
+def parseGameType(path) -> Game:
     game_type = None
     parts = Path(path).parts
 
@@ -135,7 +135,8 @@ def parseGameType(path):
         game_type = 'Nightreign'
     elif has_sequence(parts, ["steamapps", "common", "ELDEN RING"]):
         game_type = 'Elden Ring'
-    return game_type
+
+    return Game(game_type)
 
 def createDebugGrid(image, subtextures):
     """Outputs a png with grid lines for debugging"""
