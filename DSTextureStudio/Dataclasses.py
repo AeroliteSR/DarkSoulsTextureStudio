@@ -35,7 +35,7 @@ class AtlasLayout:
                 name = f"{name}.png"
 
             if self.has_subtexture(name):
-                print("Subtexture entry already exists in layout file. Skipping.")
+                print(f"Subtexture entry `{name}` already exists in layout file. Skipping.")
                 continue
 
             item = ET.SubElement(atlas, "SubTexture", {
@@ -68,9 +68,11 @@ class SubTexture:
     y: int
     width: int
     height: int
-    blank: bool = False
-    parent: Optional[str] = None
+
     img: Optional[Image.Image] = None
+
+    parent: Optional[str] = None
+    blank: bool = False
     half: Optional[bool] = False
 
     def pos(self):
