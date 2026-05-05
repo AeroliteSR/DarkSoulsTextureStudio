@@ -41,7 +41,7 @@ def processLayout(queue, output_dir: Path, game: Game, base_name, format_mode):
         binder = Binder(
             version=BinderVersion.V4,
             dcx_type=DCXType.DCX_KRAK,
-            v4_info=BinderVersion4Info.eldenring_default())
+            v4_info=BinderVersion4Info(False, False, True, 4))
         
         _format = ResFormat.from_name(game.name)
         root = ROOTS.get(game.name, "") / base_name / _format.get(format_mode)
