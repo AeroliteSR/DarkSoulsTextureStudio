@@ -99,5 +99,5 @@ class TextureNamePrompt(QDialog):
 
         id = self.id_input.text()
         if not id.isdigit() or not 0 <= int(id) < 65536:
-            showError(None, "Inputted ID is not an asserted UInt16.\nThis may silently throw errors in Smithbox or elsewhere.\nRename this icon if that wasn't your intention.", "Warning", QMessageBox.Warning)
+            showError("Inputted ID is not an asserted UInt16.\nThis may silently throw errors in Smithbox or elsewhere.\nRename this icon if that wasn't your intention.", "Warning", QMessageBox.Warning)
         return f"{self.prefix_input.currentText()}_{id}", half
