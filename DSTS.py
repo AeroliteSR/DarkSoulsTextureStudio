@@ -442,14 +442,6 @@ class TextureStudio(QMainWindow):
                         except Exception as e:
                             QMessageBox.critical(self, "Error", f"Failed to load DLL:\n{e}")
 
-    def gameTypeDialog(self) -> Game:
-        options = ["Demon's Souls", "Dark Souls 1", "Dark Souls 2", "Dark Souls 3", "Bloodborne", "Sekiro", "Elden Ring", "Nightreign"]
-        choice, ok = QInputDialog.getItem(None, "Select Game Type", "Choose one of the following:", options, 0, False)
-
-        if choice and ok:
-            return Game(choice)
-        return None
-
     def openDcxDialog(self, dirmode: bool = False):
         """Handles everything to do with loading files. If dirmode = True, loads every dcx/tpf in a directory."""    
         self.clear()
@@ -472,7 +464,7 @@ class TextureStudio(QMainWindow):
         str_path = str(files[0].parent if dirmode else files[0])
         self.setWindowTitle(f"DSTS - {str_path}")
 
-        game = parseGameType(path=str_path) or self.gameTypeDialog()
+        game = checkGame(path=str_path)
         if game is None:
             return
         self.game = game
@@ -920,7 +912,7 @@ class TextureStudio(QMainWindow):
             if not st:
                 continue
 
-            base_img.paste(img, st.pos)
+            base_img.paste(img, st.pos())
 
         self.thumbnail_cache[atlas_name] = base_img
 
@@ -1099,6 +1091,7 @@ def getIcon(base_path):
 def main():
     app = QApplication(sys.argv)
     base_path = Path(sys.argv[0]).parent
+    app.setPalette(Palettes.dark)
     app.setWindowIcon(getIcon(base_path))
     window = TextureStudio(project_dir=base_path)
     window.show()

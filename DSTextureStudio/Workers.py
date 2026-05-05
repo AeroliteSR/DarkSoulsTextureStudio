@@ -152,8 +152,8 @@ class LoadWorker(QObject):
 
     def processOld(self):  
         try:
-            atlases: dict[str, Atlas]
-            subtextures: dict[str, dict[str, SubTexture]]
+            atlases: dict[str, Atlas] = {}
+            subtextures: dict[str, dict[str, SubTexture]] = {}
             total_files = len(self.file_mappings)
 
             for f_idx, file in enumerate(self.file_mappings, 1):

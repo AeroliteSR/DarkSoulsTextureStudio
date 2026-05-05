@@ -1,6 +1,19 @@
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QCheckBox, QDialog, QLabel, QPushButton, QMessageBox, QLineEdit, QComboBox)
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QCheckBox, QDialog, QLabel, QPushButton, QMessageBox, QLineEdit, QComboBox, QInputDialog)
 from PySide6.QtCore import Signal
+from PySide6.QtGui import QPalette, QColor
 from .GameInfo import Types
+from .Enums import Game
+
+class Palettes():
+    dark = QPalette()
+    dark.setColor(QPalette.Window, QColor("#1E1E1E"))
+    dark.setColor(QPalette.Base, QColor("#2D2D2D"))
+    dark.setColor(QPalette.WindowText, QColor("#ffffff"))
+    dark.setColor(QPalette.Text, QColor("#ffffff"))
+    dark.setColor(QPalette.ButtonText, QColor("#FFFFFF"))
+    dark.setColor(QPalette.Disabled, QPalette.WindowText, QColor("#A7A7A7"))
+    dark.setColor(QPalette.Disabled, QPalette.Text, QColor("#A7A7A7"))
+    dark.setColor(QPalette.Disabled, QPalette.ButtonText, QColor("#444444"))
 
 def showError(text, title="Error", _type=QMessageBox.Critical):
     """Error popup with specified text"""
@@ -12,6 +25,14 @@ def showError(text, title="Error", _type=QMessageBox.Critical):
 
 def showQuery(title, text):
     return QMessageBox.question(None, title, text, QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
+
+def gameTypeDialog() -> Game:
+    options = ["Demon's Souls", "Dark Souls 1", "Dark Souls 2", "Dark Souls 3", "Bloodborne", "Sekiro", "Elden Ring", "Nightreign"]
+    choice, ok = QInputDialog.getItem(None, "Select Game Type", "Choose one of the following:", options, 0, False)
+
+    if choice and ok:
+        return Game(choice)
+    return None
 
 class SearchWindow(QWidget):
     results = Signal(str, bool) # text, atlas search mode

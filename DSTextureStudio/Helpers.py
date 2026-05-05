@@ -8,6 +8,7 @@ from PySide6.QtGui import QPixmap, QImage
 from PySide6.QtCore import Qt
 import re
 from .Enums import ResFormat, Game
+from .GUI import gameTypeDialog
 from soulstruct.containers import Binder, BinderEntry, BinderVersion, BinderVersion4Info
 from soulstruct.dcx import core, DCXType
 
@@ -168,3 +169,9 @@ def getPngSize(pil_img):
     buf = BytesIO()
     pil_img.save(buf, format="PNG")
     return len(buf.getvalue())
+
+def checkGame(path: str) -> Game:
+    game = parseGameType(path=path)
+    if game.name is None:
+        game = gameTypeDialog()
+    return game if game.name is not None else None
