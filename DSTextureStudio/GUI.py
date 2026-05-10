@@ -62,6 +62,10 @@ class Palettes():
         margin: 5px 6px 5px 6px;
     }
 
+    QSplitter::handle {
+        background: #1E1E1E;
+    } /* if i ever wana try get fusion to work */
+
     QCheckBox {
         color: #FFFFFF;
     }
