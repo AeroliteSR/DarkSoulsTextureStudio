@@ -22,7 +22,10 @@ class Game():
         self.name = name
         self.type = self.classify(name)
 
-    def classify(self, name: str) -> GameType:
+    def classify(self, name: str | None) -> GameType | None:
+        if name is None:
+            return None
+
         if name in self.OLD_GAMES:
             return GameType.OLD
         elif name in self.PS_GAMES:
@@ -31,7 +34,8 @@ class Game():
             return GameType.MODERN
 
     def __repr__(self):
-        return f"Game({self.name}, {self.type.name})"
+        type_name = self.type.name if self.type else None
+        return f"Game({self.name}, {type_name})"
 
 class ResFormat(Enum):
     NIGHTREIGN = ("Nightreign", {"H": "High", "L": "Low"})

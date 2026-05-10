@@ -39,6 +39,7 @@ class TextureStudio(QMainWindow):
         self.pending_replacements = {}
         self.pending_additions = {}
         self.RESOLUTIONS = {}
+        self.game = Game(None)
 
         container = QWidget()
         layout = QHBoxLayout(container)
@@ -95,12 +96,13 @@ class TextureStudio(QMainWindow):
         self.file_menu = menu.addMenu("File")
         self.file_menu.addAction(createAction("Open File", lambda: self.openDcxDialog(dirmode=False)))
         self.file_menu.addAction(createAction("Open Directory", lambda: self.openDcxDialog(dirmode=True)))
-        self.file_menu.addAction(createAction("Clear", self.clear))
+        self.file_menu.addSeparator()
         self.file_menu.addAction(createAction("Apply Changes", self.applyChanges))
+        dump = self.file_menu.addMenu("Dump")
+        dump.addAction(createAction("Atlases", lambda: self.dumpTextures(mode=ExportMode.ATLAS)))
+        dump.addAction(createAction("Subtextures", lambda: self.dumpTextures(mode=ExportMode.SUBTEXTURE)))
         self.file_menu.addSeparator()
-        self.file_menu.addAction(createAction("Dump All Atlases", lambda: self.dumpTextures(mode=ExportMode.ATLAS)))
-        self.file_menu.addAction(createAction("Dump All Subtextures", lambda: self.dumpTextures(mode=ExportMode.SUBTEXTURE)))
-        self.file_menu.addSeparator()
+        self.file_menu.addAction(createAction("Clear", self.clear))
         self.file_menu.addAction(createAction("Exit", self.close))
 
         self.settings_menu = menu.addMenu("Settings")
@@ -402,6 +404,7 @@ class TextureStudio(QMainWindow):
         self.pending_additions = {}
         self.pending_replacements = {}
         self.RESOLUTIONS = {}
+        self.game = Game(None)
         self.preview_label.setText("Select an atlas or subtexture")
         self.info_label.setText("Image info will appear here")
 
@@ -797,12 +800,11 @@ class TextureStudio(QMainWindow):
 
     def registerReplacement(self):
         """Prompt the user for an image, then add it to the replacement queue with the currently selected texture as the target."""
+        if self.game.type is None:
+            showError("No files loaded!")
+
         if self.game.type == GameType.PS:
             showError("Sorry! Replacements are not currently supported for PS4 games (BB/DES)")
-            return
-        
-        if self.atlas_list.count() == 0:
-            showError('No atlases loaded!')
             return
         
         atlas = self.atlas_list.currentItem()
@@ -880,7 +882,6 @@ class TextureStudio(QMainWindow):
 
     def rebuildAtlas(self, atlas_name, dcx_file):
         """Reconstruct the atlas with its changes"""
-        #print(self.pending_additions, self.pending_replacements)
         base_img = self.getBaseImage(atlas_name)
 
         additions = (self.pending_additions.get(dcx_file, {}).get("additions", []))
@@ -1091,7 +1092,7 @@ def getIcon(base_path):
 def main():
     app = QApplication(sys.argv)
     base_path = Path(sys.argv[0]).parent
-    app.setPalette(Palettes.dark)
+    app.setStyleSheet(Palettes.DARK_STYLESHEET)
     app.setWindowIcon(getIcon(base_path))
     window = TextureStudio(project_dir=base_path)
     window.show()

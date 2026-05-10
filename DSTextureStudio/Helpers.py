@@ -174,4 +174,4 @@ def checkGame(path: str) -> Game:
     game = parseGameType(path=path)
     if game.name is None:
         game = gameTypeDialog()
-    return game if game.name is not None else None
+    return game

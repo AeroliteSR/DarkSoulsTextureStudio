@@ -1,19 +1,112 @@
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QCheckBox, QDialog, QLabel, QPushButton, QMessageBox, QLineEdit, QComboBox, QInputDialog)
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QCheckBox, QDialog, QLabel, QPushButton, QMessageBox, QLineEdit, QComboBox, QDialogButtonBox)
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QPalette, QColor
 from .GameInfo import Types
 from .Enums import Game
 
 class Palettes():
-    dark = QPalette()
-    dark.setColor(QPalette.Window, QColor("#1E1E1E"))
-    dark.setColor(QPalette.Base, QColor("#2D2D2D"))
-    dark.setColor(QPalette.WindowText, QColor("#ffffff"))
-    dark.setColor(QPalette.Text, QColor("#ffffff"))
-    dark.setColor(QPalette.ButtonText, QColor("#FFFFFF"))
-    dark.setColor(QPalette.Disabled, QPalette.WindowText, QColor("#A7A7A7"))
-    dark.setColor(QPalette.Disabled, QPalette.Text, QColor("#A7A7A7"))
-    dark.setColor(QPalette.Disabled, QPalette.ButtonText, QColor("#444444"))
+    DARK_STYLESHEET = """
+    QWidget {
+        background-color: #1E1E1E;
+        color: #FFFFFF;
+    }
+
+    QPushButton {
+        background-color: #2D2D2D;
+        color: #FFFFFF;
+    }
+
+    QPushButton:hover {
+        background-color: #313131;
+    }
+
+    QPushButton:pressed {
+        background-color: #2A2A2A;
+    }
+
+    QPushButton:disabled {
+        color: #777777;
+    }
+
+    QListWidget {
+        background-color: #2D2D2D;
+        color: #FFFFFF;
+        border: 1px solid #2D2D2D;
+        border-radius: 6px;
+    }
+
+    QMenu {
+        background-color: #0F0F0F;
+        color: #FFFFFF;
+        border: 1px solid #3A3A3A;
+        border-radius: 6px;
+    }
+
+    QMenu::item {
+        background-color: #0F0F0F;
+        padding: 5px 30px 5px 10px; /* top right bottom left */
+        border: 0px solid #3A3A3A;
+        border-radius: 6px;
+    }
+
+    QMenu::item:selected {
+        background-color: #1D1D1D;
+        padding: 3px 30px 3px 10px; /* top right bottom left */
+        margin: 2px;
+        border-radius: 6px;
+    }
+
+    QMenu::separator {
+        height: 1px;
+        background: #3A3A3A;
+        margin: 5px 6px 5px 6px;
+    }
+
+    QCheckBox {
+        color: #FFFFFF;
+    }
+
+    QComboBox {
+        background-color: #2D2D2D;
+        color: #FFFFFF;
+        padding: 3px 0px 3px 0px; /* top right bottom left */
+    }
+
+    QMessageBox,
+    QInputDialog {
+        background-color: #1E1E1E;
+        color: #FFFFFF;
+    }
+
+    QListWidget QScrollBar:vertical {
+        background: #2D2D2D;
+        width: 6px;
+        margin: 0px;
+        padding: 5px 0px 5px 0px; /* top right bottom left */
+        border-radius: 3px;
+    }
+
+    QListWidget QScrollBar::handle:vertical {
+        background: #444444;
+        border: 0px;
+        border-radius: 3px;
+        min-height: 50px;
+    }
+
+    QListWidget QScrollBar::handle:vertical:hover {
+        background: #575757;
+    }
+
+    QListWidget QScrollBar::add-line:vertical,
+    QListWidget QScrollBar::sub-line:vertical {
+        height: 0px;
+    }
+
+    QListWidget QScrollBar::add-page:vertical,
+    QListWidget QScrollBar::sub-page:vertical {
+        background: none;
+    }
+    """
 
 def showError(text, title="Error", _type=QMessageBox.Critical):
     """Error popup with specified text"""
@@ -27,12 +120,45 @@ def showQuery(title, text):
     return QMessageBox.question(None, title, text, QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
 
 def gameTypeDialog() -> Game:
-    options = ["Demon's Souls", "Dark Souls 1", "Dark Souls 2", "Dark Souls 3", "Bloodborne", "Sekiro", "Elden Ring", "Nightreign"]
-    choice, ok = QInputDialog.getItem(None, "Select Game Type", "Choose one of the following:", options, 0, False)
+    options = [
+        "Demon's Souls",
+        "Dark Souls 1",
+        "Dark Souls 2",
+        "Dark Souls 3",
+        "Bloodborne",
+        "Sekiro",
+        "Elden Ring",
+        "Nightreign"
+    ]
 
-    if choice and ok:
-        return Game(choice)
-    return None
+    dialog = QDialog(None)
+    dialog.setWindowTitle("Select Game Type")
+    dialog.setModal(True)
+
+    layout = QVBoxLayout(dialog)
+
+    label = QLabel("Choose one of the following:")
+    combo = QComboBox()
+    combo.setStyleSheet("""QComboBox {padding: 3px 0px 3px 6px;}""")
+    combo.addItems(options)
+
+    buttons = QDialogButtonBox(
+        QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+    )
+
+    layout.addWidget(label)
+    layout.addWidget(combo)
+    layout.addWidget(buttons)
+
+    buttons.accepted.connect(dialog.accept)
+    buttons.rejected.connect(dialog.reject)
+
+    result = dialog.exec()
+
+    if result == QDialog.Accepted:
+        return Game(combo.currentText())
+
+    return Game(None)
 
 class SearchWindow(QWidget):
     results = Signal(str, bool) # text, atlas search mode

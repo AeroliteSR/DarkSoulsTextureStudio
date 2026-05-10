@@ -1,5 +1,8 @@
 class Maps():
     TextureDimensions = {
+            None:
+            {},
+            
             "Demon's Souls":
             {'Icon00': {'width': 64, 'height': 96},
              'Icon01': {'width': 64, 'height': 96},
