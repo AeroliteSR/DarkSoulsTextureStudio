@@ -212,7 +212,7 @@ class ExtractWorker(QObject):
         super().__init__()
         self.atlases = atlases
         self.subtextures = subtextures
-        self.output_dir = output_dir
+        self.output_dir = Path(output_dir)
         self.pilLoader = loader
         self.tasks = tasks if tasks is not None else []
         self.mode = mode
@@ -247,7 +247,7 @@ class ExtractWorker(QObject):
                     self.finished.emit(False)
                     return
 
-                for atlas_name, atlas_img in self.atlases.items():
+                for atlas_name,_ in self.atlases.items():
                         for st in self.subtextures.get(atlas_name, []):
                             self.tasks.append((atlas_name, st))
 
@@ -257,8 +257,10 @@ class ExtractWorker(QObject):
                 break
             
             if self.filetype == 'dds':
-                texture: TPFTexture = self.atlases[atlas_name]['texture']
-                texture.write_dds(Path(self.output_dir) / ".Atlases" / f"{atlas_name}.dds")
+                texture: TPFTexture = self.atlases[atlas_name].texture
+                output_path = Path(self.output_dir) / ".Atlases" / f"{atlas_name}.dds"
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                texture.write_dds(output_path)
                 self.progress.emit(100, f"Exported atlas: {atlas_name}")
 
             else:
