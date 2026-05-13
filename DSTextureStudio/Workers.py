@@ -7,7 +7,6 @@ from copy import deepcopy
 from tempfile import NamedTemporaryFile
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from datetime import datetime
 import traceback
 # GUI
 from PySide6.QtCore import QObject, Signal
@@ -22,7 +21,7 @@ from DSTextureStudio.Helpers import *
 
 class LoadWorker(QObject):
     progress = Signal(int, str)   # percent, message
-    finished = Signal(dict, dict, dict, dict)  # atlases, subtextures, loaded dcx files, parsed xml data
+    finished = Signal(object, object, object, object, str)  # atlases, subtextures, loaded dcx files, parsed xml data, error msg
 
     def __init__(self, file_mappings, game: Game):
         super().__init__()
@@ -47,7 +46,7 @@ class LoadWorker(QObject):
         else:
             tpfdcx = TPF(path)
 
-        self.LOADED_DCX_FILES[path.name] = tpfdcx
+        self.LOADED_DCX_FILES[path] = tpfdcx
 
         for texture in tpfdcx.textures:
             if self.game.type == GameType.PS:
@@ -105,7 +104,7 @@ class LoadWorker(QObject):
                     self.progress.emit(percent, "Parsing layout XML...")
 
                     atlas_nodes = [AtlasLayout.from_element(el) for el in root.findall("TextureAtlas")]
-                    self.LAYOUT_FILES[file['file'].name] = atlas_nodes
+                    self.LAYOUT_FILES[file['file']] = atlas_nodes
                     total_atlases = len(atlas_nodes)
 
                     if total_atlases == 0:
@@ -142,13 +141,12 @@ class LoadWorker(QObject):
                             atlases[name] = Atlas(name=name, texture=texture, parent=file)
                             subtextures[name] = {}  # no layout info since single textures go to atlases
 
-            self.finished.emit(atlases, subtextures, self.LOADED_DCX_FILES, self.LAYOUT_FILES)
+            self.finished.emit(atlases, subtextures, self.LOADED_DCX_FILES, self.LAYOUT_FILES, "")
             self.progress.emit(100, 'Successfully loaded all files!')
 
         except Exception as e:
-            print(e)
             self.progress.emit(0, f"Error: {e}")
-            self.finished.emit({}, {}, {}, {})
+            self.finished.emit({}, {}, {}, {}, traceback.format_exc())
 
     def processOld(self):  
         try:
@@ -197,12 +195,11 @@ class LoadWorker(QObject):
                             
                         self.progress.emit(percent, f"Processed {name}")
 
-            self.finished.emit(atlases, subtextures, self.LOADED_DCX_FILES, {})
+            self.finished.emit(atlases, subtextures, self.LOADED_DCX_FILES, {}, "")
 
         except Exception as e:
-            traceback.print_exc()
             self.progress.emit(0, f"Error: {e}")
-            self.finished.emit({}, {}, {}, {})
+            self.finished.emit({}, {}, {}, {}, traceback.format_exc())
 
 class ExtractWorker(QObject):
     progress = Signal(int, str) # percent, message
@@ -287,16 +284,14 @@ class ExtractWorker(QObject):
         self.finished.emit(True)
 
 class ReplaceWorker(QObject):
-    finished = Signal(bool, str)  # success, message
+    finished = Signal(bool, str, Path)  # success, message
 
-    def __init__(self, replacements, additions, subtextures, loaded_files, layouts, getPilImage, project_dir, game, resolutions):
+    def __init__(self, replacements, additions, subtextures, loaded_files, layouts, getPilImage, game, resolutions):
         super().__init__()
         self.replacements = replacements
         self.additions = additions
         self.subtextures = subtextures
         self.getPilImage = getPilImage
-        self.output_dir = project_dir / "Output" / ".DCX Files" / datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        self.output_dir.mkdir(parents=True, exist_ok=True)
         self.LOADED_DCX_FILES = loaded_files
         self.LAYOUT_FILES = layouts
         self.game = game
@@ -307,7 +302,7 @@ class ReplaceWorker(QObject):
         dcx_ops = {}
 
         for dcx_path, atlases in self.replacements.items():
-            base_name = Path(dcx_path).name
+            base_name = Path(dcx_path)
             dcx_ops.setdefault(base_name, {})
 
             for atlas_name, changes in atlases.items():
@@ -315,12 +310,12 @@ class ReplaceWorker(QObject):
                 dcx_ops[base_name][atlas_name]["replacements"].update(changes)
 
         for dcx_path, add_data in self.additions.items():
-            base_name = Path(dcx_path).name
+            base_name = Path(dcx_path)
 
             if dcx_path in self.LAYOUT_FILES:
                 print(f"Processing layout for: {base_name}")
-                lyt_name = replaceTerms(base_name.split('.')[0], {"_h": "", "_l": ""}) if self.game.name == 'Nightreign' else ""
-                processLayout({dcx_path: add_data}, self.output_dir, self.game, lyt_name, format_mode=self.RESOLUTIONS.get(lyt_name, "H"))
+                lyt_name = replaceTerms(base_name.name.split('.')[0], {"_h": "", "_l": ""}) if self.game.name == 'Nightreign' else ""
+                processLayout(add_data, self.game, lyt_name, format_mode=self.RESOLUTIONS.get(lyt_name, "H"))
 
             additions_by_atlas = {}
             for sub in add_data["additions"]:
@@ -347,8 +342,8 @@ class ReplaceWorker(QObject):
 
     def run(self):
         try:
-            for base_name, atlases in self.buildOperations().items():
-                base: TPF = deepcopy(self.LOADED_DCX_FILES[base_name])
+            for base_path, atlases in self.buildOperations().items():
+                base: TPF = deepcopy(self.LOADED_DCX_FILES[base_path])
                 atlas_cache = {}
 
                 for atlas_name, ops in atlases.items():
@@ -365,8 +360,7 @@ class ReplaceWorker(QObject):
                             st = self.subtextures.get(atlas_name, {}).get(sub_name)
                             if not st:
                                 raise Exception(f"Could not resolve subtexture '{sub_name}' in atlas '{atlas_name}'")
-                            #atlas_img.paste(new_img, (st.x, st.y))
-                            st.paste_into(atlas_img)
+                            atlas_img.paste(new_img, (st.x, st.y))
                         else:  # full atlas replacement
                             atlas_img = new_img.copy()
                             atlas_cache[atlas_name] = atlas_img
@@ -382,9 +376,9 @@ class ReplaceWorker(QObject):
                         if os.path.exists(temp_path):
                             os.remove(temp_path)
 
-                base.write(self.output_dir / base_name)
+                base.write(base_path)
 
-            self.finished.emit(True, "All changes applied successfully!")
+            self.finished.emit(True, "All changes applied successfully!", base_path.parent)
 
         except Exception:
-            self.finished.emit(False, traceback.format_exc())
+            self.finished.emit(False, traceback.format_exc(), base_path.parent)

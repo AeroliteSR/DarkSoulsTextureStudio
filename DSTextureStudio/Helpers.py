@@ -32,38 +32,37 @@ class NaturalListItem(QListWidgetItem):
     def __lt__(self, other):
         return NaturalListItem.naturalSortKey(self.text()) < NaturalListItem.naturalSortKey(other.text())
 
-def processLayout(queue, output_dir: Path, game: Game, base_name, format_mode):
-    for _, additions in queue.items():
-        data = additions['data']
-        to_add = additions['additions']
-        output_name = additions['output']
+def processLayout(additions, game: Game, base_name, format_mode):
+    data = additions['data']
+    to_add = additions['additions']
+    output_name = additions['output']
 
-        binder = Binder(
-            version=BinderVersion.V4,
-            dcx_type=DCXType.DCX_KRAK,
-            v4_info=BinderVersion4Info(False, False, True, 4))
+    binder = Binder(
+        version=BinderVersion.V4,
+        dcx_type=DCXType.DCX_KRAK,
+        v4_info=BinderVersion4Info(False, False, True, 4))
+    
+    _format = ResFormat.from_name(game.name)
+    root = ROOTS.get(game.name, "") / base_name / _format.get(format_mode)
+
+    for atlas in data:
+        atlas_path = replaceTerms(atlas.image_path, {'.png': '', '.tif': ''})
+        atlas_subtextures = [sub for sub in to_add if sub.parent in atlas_path]
+
+        atlas.add_subtextures(atlas_subtextures)
+
+    for atlas in data:
+        xml_bytes = ET.tostring(atlas.element, encoding='utf-8', method='xml', )
+        layout_path = replaceTerms(atlas.image_path, {'.png': '.layout', '.tif': '.layout'})
+        entry = BinderEntry(
+            data=xml_bytes,
+            entry_id=binder.get_first_new_entry_id_in_range(0, 1000000),
+            path=str(root / layout_path),
+            flags=0x2)
         
-        _format = ResFormat.from_name(game.name)
-        root = ROOTS.get(game.name, "") / base_name / _format.get(format_mode)
+        binder.add_entry(entry=entry)
 
-        for atlas in data:
-            atlas_path = replaceTerms(atlas.image_path, {'.png': '', '.tif': ''})
-            atlas_subtextures = [sub for sub in to_add if sub.parent in atlas_path]
-
-            atlas.add_subtextures(atlas_subtextures)
-
-        for atlas in data:
-            xml_bytes = ET.tostring(atlas.element, encoding='utf-8', method='xml', )
-            layout_path = replaceTerms(atlas.image_path, {'.png': '.layout', '.tif': '.layout'})
-            entry = BinderEntry(
-                data=xml_bytes,
-                entry_id=binder.get_first_new_entry_id_in_range(0, 1000000),
-                path=str(root / layout_path),
-                flags=0x2)
-            
-            binder.add_entry(entry=entry)
-
-        binder.write(output_dir / output_name)
+    binder.write(output_name)
 
 def getLayoutData(dcx_path):
     with open(dcx_path, "rb") as f:

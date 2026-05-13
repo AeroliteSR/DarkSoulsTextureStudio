@@ -33,6 +33,8 @@ class TextureStudio(QMainWindow):
         self.setGeometry(100, 100, 1100, 700)
         self.createMenu()
 
+        self._context_menu = QMenu(self)
+
         self.current_crop = None
         self.current_atlas = None
         self.thumbnail_cache = {}
@@ -47,12 +49,10 @@ class TextureStudio(QMainWindow):
 
         self.atlas_list = QListWidget()
         self.atlas_list.currentItemChanged.connect(self.showAtlas)
-        #self.atlas_list.itemClicked.connect(self.showAtlas)
         splitter.addWidget(self.atlas_list)
 
         self.subtexture_list = QListWidget()
         self.subtexture_list.currentItemChanged.connect(self.showSubtexture)
-        #self.subtexture_list.itemClicked.connect(self.showSubtexture)
         self.subtexture_list.setContextMenuPolicy(Qt.CustomContextMenu)
         self.subtexture_list.customContextMenuRequested.connect(self.openSubtextureMenu)
         splitter.addWidget(self.subtexture_list)
@@ -184,7 +184,7 @@ class TextureStudio(QMainWindow):
         
         current = self.atlas_list.currentItem()
         atlas_name = current.data(Qt.UserRole)
-        dcx_file = Path(current.data(Qt.UserRole+1)).name
+        dcx_file = Path(current.data(Qt.UserRole+1))
         sub_name = item.data(Qt.UserRole)
 
         modify = self.isModified(dcx_file, atlas_name, sub_name)
@@ -193,7 +193,7 @@ class TextureStudio(QMainWindow):
 
         self.subtexture_list.setCurrentItem(item)
 
-        menu = QMenu()
+        menu = self._context_menu
 
         delete_action = QAction("Delete", self)
         delete_action.triggered.connect(lambda: self.deleteSubtexture(item))
@@ -219,7 +219,7 @@ class TextureStudio(QMainWindow):
             return
         
         atlas_name = atlas_item.data(Qt.UserRole)
-        dcx_file = Path(atlas_item.data(Qt.UserRole+1)).name
+        dcx_file = Path(atlas_item.data(Qt.UserRole+1))
         sub_name = sub_item.data(Qt.UserRole)
 
         if atlas_name in self.subtextures and sub_name in self.subtextures[atlas_name]:
@@ -266,7 +266,7 @@ class TextureStudio(QMainWindow):
                 if a.name == old_name:
                     a.name = new_name
 
-        dcx_file = Path(atlas_item.data(Qt.UserRole+1)).name
+        dcx_file = Path(atlas_item.data(Qt.UserRole+1))
 
         repls = self.pending_replacements.get(dcx_file, {}).get(atlas_name, {})
         if old_name in repls:
@@ -283,7 +283,7 @@ class TextureStudio(QMainWindow):
             return
 
         atlas_name = atlas_item.data(Qt.UserRole)
-        dcx_file = Path(atlas_item.data(Qt.UserRole+1)).name
+        dcx_file = Path(atlas_item.data(Qt.UserRole+1))
         sub_name = sub_item.data(Qt.UserRole)
 
         repls_for_file = self.pending_replacements.get(dcx_file)
@@ -325,7 +325,7 @@ class TextureStudio(QMainWindow):
             return
 
         atlas_name = atlas_item.data(Qt.UserRole)
-        dcx_file = Path(atlas_item.data(Qt.UserRole+1)).name
+        dcx_file = Path(atlas_item.data(Qt.UserRole+1))
 
         subs = self.subtextures.get(atlas_name, {})
         if not subs:
@@ -377,7 +377,7 @@ class TextureStudio(QMainWindow):
         self.pending_additions.setdefault(dcx_file, {
             "data": self.LAYOUT_FILES.get(dcx_file),
             "additions": [],
-            "output": dcx_file.replace('.tpf', '.sblytbnd')
+            "output": dcx_file.with_name(dcx_file.name.replace('.tpf.dcx', '.sblytbnd.dcx'))
         })
 
         self.pending_additions[dcx_file]["additions"].append(sub)
@@ -585,12 +585,12 @@ class TextureStudio(QMainWindow):
         self.thread.started.connect(self.worker.run)
         self.thread.start()
 
-    def loadDone(self, atlases, subtextures, LOADED_DCX_FILES, LAYOUT_FILES):
+    def loadDone(self, atlases, subtextures, LOADED_DCX_FILES, LAYOUT_FILES, msg):
         """Stuff to do on successful load of files."""
         self.progress_dialog.close()
 
-        if not atlases:
-            QMessageBox.critical(self, "Error", "Failed to load textures.")
+        if not LOADED_DCX_FILES:
+            showError(msg)
             return
 
         self.atlases = atlases
@@ -648,18 +648,22 @@ class TextureStudio(QMainWindow):
         self.progress_dialog.setValue(percent)
         self.progress_dialog.setLabelText(message)
 
-    def extractionDone(self, success=True):
+    def extractionDone(self, success=True, saved_path: Path|None = None):
         """Stuff to do after extraction finishes"""
         self.progress_dialog.close()
+
+        if saved_path is None:
+            saved_path = self.project_dir / "Output"
+
         if success:
             msg = QMessageBox(self)
             msg.setIcon(QMessageBox.Information)
             msg.setWindowTitle("Saved")
-            msg.setText(f"Export saved to {self.project_dir / "Output"}")
+            msg.setText(f"Export saved to:\n{saved_path}")
             _open = QPushButton("Open Folder")
             msg.addButton(_open, QMessageBox.ActionRole)
             msg.addButton(QMessageBox.Ok)
-            _open.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.project_dir / "Output"))))
+            _open.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(saved_path))))
             msg.exec()
         else:
             QMessageBox.critical(self, "Error", f"Failed to find subtextures")
@@ -770,7 +774,7 @@ class TextureStudio(QMainWindow):
 
     def queueReplacement(self, dcx_file: Path, atlas_item, sub_item, img_path: Path):
         atlas_name = atlas_item.data(Qt.UserRole)
-        dcx_file = Path(dcx_file).name
+        dcx_file = Path(dcx_file)
         sub_name = sub_item.data(Qt.UserRole) if sub_item else None
 
         try:
@@ -840,22 +844,22 @@ class TextureStudio(QMainWindow):
         self.replace_dialog.setStyleSheet("""QLabel {qproperty-alignment: AlignCenter;} QProgressBar {text-align: center;}""")
 
         self.r_thread = QThread()
-        self.r_worker = ReplaceWorker(self.pending_replacements, self.pending_additions, self.subtextures, self.LOADED_DCX_FILES, self.LAYOUT_FILES, self.getPilImage, self.project_dir, self.game, self.RESOLUTIONS)
+        self.r_worker = ReplaceWorker(self.pending_replacements, self.pending_additions, self.subtextures, self.LOADED_DCX_FILES, self.LAYOUT_FILES, self.getPilImage, self.game, self.RESOLUTIONS)
         self.r_worker.moveToThread(self.r_thread)
         self.r_thread.started.connect(self.r_worker.run)
 
         self.r_worker.finished.connect(self.r_thread.quit)
-        self.r_worker.finished.connect(self.replaceDone)
+        self.r_worker.finished.connect(self.changesDone)
         self.r_worker.finished.connect(self.r_worker.deleteLater)
         self.r_thread.finished.connect(self.r_thread.deleteLater)
         
         self.r_thread.start()
 
-    def replaceDone(self, success: bool, msg: str):
+    def changesDone(self, success: bool, msg: str, saved_path: Path):
         """Triggered on completion of tpf/dcx export."""
         self.replace_dialog.close()
         if success:
-            self.extractionDone(True)
+            self.extractionDone(True, saved_path)
             self.pending_replacements.clear()
         else:
             showError(msg)
@@ -961,7 +965,7 @@ class TextureStudio(QMainWindow):
         if not current:
             return
         atlas_name = current.data(Qt.UserRole)
-        dcx_file = Path(current.data(Qt.UserRole+1)).name
+        dcx_file = Path(current.data(Qt.UserRole+1))
         self.current_atlas = atlas_name
         self.current_crop = None
         atlas_modified = False
@@ -999,7 +1003,7 @@ class TextureStudio(QMainWindow):
         self.subtexture_list.blockSignals(False)
         self.subtexture_list.sortItems()
 
-        self.info_label.setText(self.formatImageInfo(atlas_name, dcx_file, atlas_img, img_type=current.data(Qt.UserRole+2)))
+        self.info_label.setText(self.formatImageInfo(atlas_name, dcx_file.name, atlas_img, img_type=current.data(Qt.UserRole+2)))
         self.toggleCustomNames() # just to update it
 
     def showSubtexture(self, current):
