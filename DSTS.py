@@ -10,7 +10,7 @@ from math import gcd
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QListWidget, QLabel, QHBoxLayout, QFileDialog, QPushButton,
 QMessageBox, QSplitter, QProgressDialog, QInputDialog, QMenu)
 from PySide6.QtGui import QIcon, QDesktopServices, QAction
-from PySide6.QtCore import Qt, QThread, QUrl, QPoint, QTimer
+from PySide6.QtCore import Qt, QThread, QUrl, QPoint, QTimer, QSize
 # Soulstruct
 from soulstruct.dcx import oodle
 # DSTS
@@ -63,8 +63,8 @@ class TextureStudio(QMainWindow):
         self.preview_label = QLabel("Texture Preview")
         self.preview_label.setAlignment(Qt.AlignCenter)
         self.preview_label.setStyleSheet("border: 1px solid gray; background: #222; color: white;")
-        self.preview_label.setFixedSize(600, 400)  # smaller preview box
-        right_layout.addWidget(self.preview_label, alignment=Qt.AlignCenter)
+        self.preview_label.setMinimumSize(600, 400)
+        right_layout.addWidget(self.preview_label)
 
         self.info_label = QLabel("Texture Info")
         self.info_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
@@ -603,6 +603,7 @@ class TextureStudio(QMainWindow):
             item = NaturalListItem(name)
             item.setData(Qt.UserRole, name) # original name
             item.setData(Qt.UserRole+1, _atlas.parent) # parent file
+            item.setSizeHint(QSize(0, 30))
             img_type = "Atlas" if len(self.subtextures.get(name, {})) > 0 else "Texture"
             item.setData(Qt.UserRole+2, img_type) # image type
             self.atlas_list.addItem(item)
@@ -972,7 +973,7 @@ class TextureStudio(QMainWindow):
 
         atlas_img = self.getPilImage(atlas_name, createDebug=self.btn_atlasGrid.isChecked())
         preview_img = atlas_img.copy()
-        preview_img.thumbnail((600, 400), Image.Resampling.LANCZOS)
+        preview_img.thumbnail(self.preview_label.size().toTuple(), Image.Resampling.LANCZOS)
         pixmap = pil2Qpixmap(preview_img)
         self.preview_label.setPixmap(pixmap)
 
@@ -988,6 +989,7 @@ class TextureStudio(QMainWindow):
 
             item = NaturalListItem(key)
             item.setData(Qt.UserRole, key)
+            item.setSizeHint(QSize(0, 30))
 
             modify = self.isModified(dcx_file, atlas_name, key)
             if modify == Modified.REPLACED:
@@ -1021,7 +1023,7 @@ class TextureStudio(QMainWindow):
             return
 
         cropped = atlas_img.crop(st.box())
-        cropped.thumbnail((600, 400), Image.Resampling.LANCZOS)
+        cropped.thumbnail(self.preview_label.size().toTuple(), Image.Resampling.LANCZOS)
         pixmap = pil2Qpixmap(cropped)
 
         self.preview_label.setPixmap(pixmap)

@@ -52,7 +52,6 @@ class Palettes():
     QMenu::item:selected {
         background-color: #1D1D1D;
         padding: 3px 30px 3px 10px; /* top right bottom left */
-        margin: 2px;
         border-radius: 6px;
     }
 
@@ -80,6 +79,49 @@ class Palettes():
     QInputDialog {
         background-color: #1E1E1E;
         color: #FFFFFF;
+    }
+
+    QListWidget {
+        background-color: #2D2D2D;
+        color: #FFFFFF;
+        border: none;
+        outline: 0;
+        font-family: "Segoe UI";
+        font-size: 9pt;
+        padding: 1px;
+    }
+
+    QListWidget::item {
+        color: white;
+        border: none;
+        padding: 0px 8px 0px 8px; /* top right bottom left */
+        border-radius: 4px;
+    }
+
+    QListWidget::item:selected {
+        background: #393939;
+        color: white;
+        padding: 0px 10px 0px 10px; /* top right bottom left */
+
+        background: qlineargradient(
+            x1:0, y1:0, x2:1, y2:0,
+
+            stop:0      transparent,
+            stop:0.015  #2AA8FF,
+            stop:0.022  #2AA8FF,
+            stop:0.023  transparent,
+            stop:0.05   #3A3A3A,
+            stop:1      #3A3A3A
+        );
+
+        border-radius: 4px;
+        margin: 2px;
+    }
+
+    QListWidget::item:focus {
+        outline: none;
+        border-radius: 4px;
+
     }
 
     QListWidget QScrollBar:vertical {
