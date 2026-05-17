@@ -204,11 +204,13 @@ class TextureStudio(QMainWindow):
         revert_action = QAction("Revert", self)
         revert_action.triggered.connect(lambda: self.revertSubtexture(item))
 
-        if modify == Modified.ADDED:
-            menu.addAction(delete_action)
-            menu.addAction(rename_action)
-        elif modify == Modified.REPLACED:
-            menu.addAction(revert_action)
+        match modify:
+            case Modified.ADDED:
+                menu.addAction(delete_action)
+                menu.addAction(rename_action)
+
+            case Modified.REPLACED:
+                menu.addAction(revert_action)
 
         menu.exec(self.subtexture_list.viewport().mapToGlobal(position))
 

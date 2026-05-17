@@ -31,10 +31,13 @@ class LoadWorker(QObject):
         self.LAYOUT_FILES = {}
 
     def run(self):
-        if self.game.type == GameType.MODERN: # sblyt is used
-            self.processModern()
-        else: # DS/PS
-            self.processOld()
+        match self.game.type:
+            case GameType.MODERN:
+                self.processModern()
+            case GameType.OLD | GameType.PS:
+                self.processOld()
+            case _:
+                self.processOld()
 
     def handleUnpack(self, path):
         if self.game.type == GameType.PS:
@@ -50,10 +53,11 @@ class LoadWorker(QObject):
 
         for texture in tpfdcx.textures:
             if self.game.type == GameType.PS:
-                if self.game.name == "Bloodborne":
-                    platform = TPFPlatform.PS4
-                elif self.game.name == "Demon's Souls":
-                    platform = TPFPlatform.PC
+                match self.game.name:
+                    case "Bloodborne":
+                        platform = TPFPlatform.PS4
+                    case "Demon's Souls":
+                        platform = TPFPlatform.PC
 
                 dds_data = texture.get_headerized_data(platform)
 
@@ -231,55 +235,58 @@ class ExtractWorker(QObject):
 
     def run(self):
         if not self.tasks: # dump mode
-            if self.mode == ExportMode.ATLAS:
-                if not self.atlases:
-                    self.finished.emit(False)
-                    return
+            match self.mode:
+                case ExportMode.ATLAS:
+                    if not self.atlases:
+                        self.finished.emit(False)
+                        return
 
-                for atlas_name in self.atlases:
-                    self.tasks.append((atlas_name, None))
+                    for atlas_name in self.atlases:
+                        self.tasks.append((atlas_name, None))
 
-            elif self.mode == ExportMode.SUBTEXTURE:
-                if not self.subtextures:
-                    self.finished.emit(False)
-                    return
+                case ExportMode.SUBTEXTURE:
+                    if not self.subtextures:
+                        self.finished.emit(False)
+                        return
 
-                for atlas_name,_ in self.atlases.items():
-                        for st in self.subtextures.get(atlas_name, []):
-                            self.tasks.append((atlas_name, st))
+                    for atlas_name,_ in self.atlases.items():
+                            for st in self.subtextures.get(atlas_name, []):
+                                self.tasks.append((atlas_name, st))
 
         total = len(self.tasks)
         for i, (atlas_name, st) in enumerate(self.tasks, 1):
             if self._interrupted:
                 break
             
-            if self.filetype == 'dds':
-                texture: TPFTexture = self.atlases[atlas_name].texture
-                output_path = Path(self.output_dir) / ".Atlases" / f"{atlas_name}.dds"
-                output_path.parent.mkdir(parents=True, exist_ok=True)
-                texture.write_dds(output_path)
-                self.progress.emit(100, f"Exported atlas: {atlas_name}")
+            match self.filetype:
+                case 'dds':
+                    texture: TPFTexture = self.atlases[atlas_name].texture
+                    output_path = Path(self.output_dir) / ".Atlases" / f"{atlas_name}.dds"
+                    output_path.parent.mkdir(parents=True, exist_ok=True)
+                    texture.write_dds(output_path)
+                    self.progress.emit(100, f"Exported atlas: {atlas_name}")
 
-            else:
-                atlas_img = self.pilLoader(atlas_name=atlas_name)
-                percent = int(i / total * 100 - 1)
+                case _:
+                    atlas_img = self.pilLoader(atlas_name=atlas_name)
+                    percent = int(i / total * 100 - 1)
 
-                if self.mode == ExportMode.ATLAS:
-                    out_path = self.output_dir / '.Atlases'
-                    filename = atlas_name
-                    message = f"Exported atlas: {atlas_name}"
+                    match self.mode:
+                        case ExportMode.ATLAS:
+                            out_path = self.output_dir / '.Atlases'
+                            filename = atlas_name
+                            message = f"Exported atlas: {atlas_name}"
 
-                    if self.gridOverlay:
-                        atlas_img = createDebugGrid(atlas_img, self.subtextures[atlas_name])
+                            if self.gridOverlay:
+                                atlas_img = createDebugGrid(atlas_img, self.subtextures[atlas_name])
 
-                elif self.mode == ExportMode.SUBTEXTURE:
-                    out_path = self.output_dir / atlas_name
-                    filename = st
-                    message = f"Exported {st} from {atlas_name}"
-                    st: SubTexture = self.subtextures[atlas_name][st]
-                    atlas_img = atlas_img.crop(st.box()) # crop if in subtexture mode
+                        case ExportMode.SUBTEXTURE:
+                            out_path = self.output_dir / atlas_name
+                            filename = st
+                            message = f"Exported {st} from {atlas_name}"
+                            st: SubTexture = self.subtextures[atlas_name][st]
+                            atlas_img = atlas_img.crop(st.box()) # crop if in subtexture mode
 
-                self.exportImg(image=atlas_img, filename=filename, out_path=out_path, progress=percent, message=message)
+                    self.exportImg(image=atlas_img, filename=filename, out_path=out_path, progress=percent, message=message)
 
         self.finished.emit(True)
 
